@@ -23,7 +23,7 @@ my-ai-app/
 
 ## Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 20.19.4+ and npm 10.8+
 - Expo CLI (`npx expo`) for local development
 - Azure Functions Core Tools v4 (for local API testing)
 - An OpenAI API key with access to the Whisper/gpt-4o transcription models
@@ -93,6 +93,7 @@ my-ai-app/
 
 ## Troubleshooting
 
+- **`npm WARN EBADENGINE` during install** – Install Node.js 20.19.4 or later. The Expo SDK 54 toolchain requires the newer runtime and its matching npm release. Tools such as `nvm`, `fnm`, or Volta can help pin the correct version.
 - **Recording button disabled** – In-browser recording relies on the MediaRecorder API, which is available in most evergreen browsers. If it is unavailable, upload audio files instead.
 - **Transcription errors** – Check the Functions log output. Typical issues include missing `OPENAI_API_KEY`, network restrictions, or unsupported audio codecs.
 - **Deployment failures** – Confirm the GitHub secret `AZURE_STATIC_WEB_APPS_API_TOKEN` is set and the Static Web App resource is configured to use the workflow from this repository.
