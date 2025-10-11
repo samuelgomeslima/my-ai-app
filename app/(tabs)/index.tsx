@@ -56,6 +56,16 @@ const extractErrorMessage = (
   const fallbackText = rawText.trim();
 
   if (fallbackText.length > 0) {
+    const looksLikeHtml = /<(!DOCTYPE|html)/iu.test(fallbackText);
+
+    if (looksLikeHtml) {
+      if (status === 404) {
+        return 'The status endpoint returned a 404 HTML page. Verify that the Azure Functions API is deployed and the /api/status route is reachable.';
+      }
+
+      return 'The server responded with an HTML error page instead of JSON. Ensure the Azure Functions backend is running and accessible.';
+    }
+
     return fallbackText;
   }
 
