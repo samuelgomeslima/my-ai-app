@@ -11,6 +11,59 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const extensionMimeMap = new Map(
+  Object.entries({
+    '.aac': 'audio/aac',
+    '.aif': 'audio/aiff',
+    '.aiff': 'audio/aiff',
+    '.amr': 'audio/amr',
+    '.caf': 'audio/x-caf',
+    '.flac': 'audio/flac',
+    '.m4a': 'audio/mp4',
+    '.mp3': 'audio/mpeg',
+    '.mp4': 'audio/mp4',
+    '.oga': 'audio/ogg',
+    '.ogg': 'audio/ogg',
+    '.opus': 'audio/ogg',
+    '.wav': 'audio/wav',
+    '.webm': 'audio/webm',
+    '.3gp': 'audio/3gpp',
+    '.waptt': 'audio/ogg',
+  }),
+);
+
+const mimeFallbackExtension = {
+  'audio/3gpp': '.3gp',
+  'audio/aac': '.aac',
+  'audio/aiff': '.aiff',
+  'audio/amr': '.amr',
+  'audio/flac': '.flac',
+  'audio/mpeg': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/ogg': '.ogg',
+  'audio/opus': '.opus',
+  'audio/wav': '.wav',
+  'audio/webm': '.webm',
+  'audio/x-caf': '.caf',
+};
+
+const determineFileMetadata = (file) => {
+  const providedType = typeof file.type === 'string' && file.type.length > 0 ? file.type : null;
+  const providedName = typeof file.name === 'string' ? file.name : '';
+  const normalizedName = providedName.toLowerCase();
+
+  const matchedExtension = Array.from(extensionMimeMap.keys()).find((ext) => normalizedName.endsWith(ext));
+  const inferredType = providedType ?? (matchedExtension ? extensionMimeMap.get(matchedExtension) : null);
+  const mimeType = inferredType ?? 'audio/webm';
+
+  const fallbackExtension =
+    matchedExtension ?? mimeFallbackExtension[mimeType] ?? '.webm';
+
+  const safeName = providedName && providedName.trim().length > 0 ? providedName : `audio-upload${fallbackExtension}`;
+
+  return { mimeType, fileName: safeName };
+};
+
 app.http('transcribe', {
   methods: ['POST', 'OPTIONS'],
   authLevel: 'anonymous',
@@ -65,8 +118,9 @@ app.http('transcribe', {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const typedArray = new Uint8Array(arrayBuffer);
-      const uploadFile = await toFile(typedArray, file.name || 'audio.webm', {
-        type: file.type || 'audio/webm',
+      const { mimeType, fileName } = determineFileMetadata(file);
+      const uploadFile = await toFile(typedArray, fileName, {
+        type: mimeType,
       });
 
       const transcription = await openai.audio.transcriptions.create({
