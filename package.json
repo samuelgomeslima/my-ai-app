@@ -45,5 +45,9 @@
     "eslint-config-expo": "~10.0.0"
   },
   "private": true,
-  "packageManager": "npm@10.9.0"
+  "packageManager": "npm@10.9.0",
+  "engines": {
+    "node": ">=20.19.4",
+    "npm": ">=10.8.2"
+  }
 }
