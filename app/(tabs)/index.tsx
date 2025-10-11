@@ -17,6 +17,62 @@ const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').replace(/\/$/,
 
 const createId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+type ParsedResponse = {
+  json: Record<string, unknown> | null;
+  rawText: string;
+};
+
+const readResponseContent = async (response: Response): Promise<ParsedResponse> => {
+  const rawText = await response.text();
+
+  if (!rawText) {
+    return { json: null, rawText: '' };
+  }
+
+  try {
+    return { json: JSON.parse(rawText) as Record<string, unknown>, rawText };
+  } catch {
+    return { json: null, rawText };
+  }
+};
+
+const extractErrorMessage = (
+  data: Record<string, unknown> | null,
+  rawText: string,
+  status: number,
+  statusText: string,
+) => {
+  if (data && typeof data === 'object') {
+    const candidateKeys = ['error', 'message', 'detail'] as const;
+
+    for (const key of candidateKeys) {
+      const value = data[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+
+  const fallbackText = rawText.trim();
+
+  if (fallbackText.length > 0) {
+    return fallbackText;
+  }
+
+  const statusLabel = statusText && statusText.length > 0 ? `${status} ${statusText}` : `${status}`;
+  return `Request failed with status ${statusLabel}`;
+};
+
+const normaliseErrorMessage = (value: string) => {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return 'An unknown error occurred.';
+  }
+
+  return trimmed.replace(/^(?:[A-Za-z]*Error):\s*/u, '').trim() || trimmed;
+};
+
 type Message = {
   id: string;
   role: 'user' | 'assistant';
@@ -35,6 +91,19 @@ const getTranscribeUrl = () => {
   return `${API_BASE_URL}/api/transcribe`;
 };
 
+const getStatusUrl = () => {
+  if (API_BASE_URL.length === 0) {
+    return '/api/status';
+  }
+
+  return `${API_BASE_URL}/api/status`;
+};
+
+type ServerStatusState =
+  | { state: 'checking' }
+  | { state: 'ok'; openaiConfigured: boolean; message: string }
+  | { state: 'error'; message: string };
+
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
@@ -49,6 +118,7 @@ export default function HomeScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerStatusState>({ state: 'checking' });
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -57,7 +127,52 @@ export default function HomeScreen() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const checkServerStatus = async () => {
+      try {
+        const response = await fetch(getStatusUrl());
+        const { json, rawText } = await readResponseContent(response);
+
+        if (!response.ok) {
+          const message = extractErrorMessage(json, rawText, response.status, response.statusText ?? '');
+          throw new Error(message);
+        }
+
+        if (!json || typeof json !== 'object') {
+          throw new Error('The status endpoint returned an empty response.');
+        }
+
+        const data = json as Record<string, unknown>;
+        const openaiConfigured =
+          'openaiConfigured' in data && typeof data.openaiConfigured === 'boolean' ? data.openaiConfigured : false;
+
+        const message =
+          'message' in data && typeof data.message === 'string'
+            ? data.message
+            : openaiConfigured
+              ? 'OpenAI API key is configured on the server.'
+              : 'OpenAI API key is missing or empty on the server.';
+
+        if (!cancelled) {
+          setServerStatus({ state: 'ok', openaiConfigured, message });
+        }
+      } catch (error) {
+        const message = normaliseErrorMessage(
+          error instanceof Error ? error.message : 'Unable to contact the status endpoint.',
+        );
+
+        if (!cancelled) {
+          setServerStatus({ state: 'error', message });
+        }
+      }
+    };
+
+    checkServerStatus();
+
     return () => {
+      cancelled = true;
+
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
@@ -100,20 +215,6 @@ export default function HomeScreen() {
     );
   };
 
-  const parseJsonSafely = async (response: Response) => {
-    const text = await response.text();
-
-    if (!text) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      throw new Error('The server returned an invalid response.');
-    }
-  };
-
   const sendBlobForTranscription = async (blob: Blob, fileName: string) => {
     setErrorMessage(null);
     setIsUploading(true);
@@ -145,17 +246,18 @@ export default function HomeScreen() {
         body: formData,
       });
 
-      const result = await parseJsonSafely(response);
+      const { json, rawText } = await readResponseContent(response);
 
       if (!response.ok) {
-        const message =
-          result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
-            ? result.error
-            : 'Unable to transcribe the audio.';
-
+        const message = extractErrorMessage(json, rawText, response.status, response.statusText ?? '');
         throw new Error(message);
       }
 
+      if (!json || typeof json !== 'object') {
+        throw new Error('The server response did not include any data.');
+      }
+
+      const result = json as Record<string, unknown>;
       const details: string[] = [];
       const language =
         result && typeof result === 'object' && 'language' in result && typeof result.language === 'string'
@@ -167,7 +269,7 @@ export default function HomeScreen() {
           : null,
       );
 
-      if (!(result && typeof result === 'object' && 'text' in result && typeof result.text === 'string')) {
+      if (!('text' in result) || typeof result.text !== 'string') {
         throw new Error('The server response did not include a transcription result.');
       }
 
@@ -186,14 +288,15 @@ export default function HomeScreen() {
         meta: details.length > 0 ? details.join(' • ') : undefined,
       }));
     } catch (error) {
-      const fallbackMessage =
-        error instanceof Error ? error.message : 'An unexpected error occurred while contacting the server.';
+      const fallbackMessage = normaliseErrorMessage(
+        error instanceof Error ? error.message : 'An unexpected error occurred while contacting the server.',
+      );
 
       updateMessage(pendingMessageId, (message) => ({
         ...message,
         status: 'error',
         text: 'I could not transcribe that audio clip.',
-        meta: undefined,
+        meta: fallbackMessage,
       }));
 
       setErrorMessage(fallbackMessage);
@@ -282,6 +385,33 @@ export default function HomeScreen() {
           <ThemedText style={styles.subtitle}>
             Transcribe voice notes and conversations with a single click.
           </ThemedText>
+        </View>
+
+        <View style={styles.statusPanel}>
+          {serverStatus.state === 'checking' && (
+            <View style={[styles.statusSummary, styles.statusSummaryNeutral]}>
+              <ActivityIndicator size="small" />
+              <ThemedText style={styles.statusSummaryText}>Checking server configuration…</ThemedText>
+            </View>
+          )}
+
+          {serverStatus.state === 'ok' && (
+            <View
+              style={[
+                styles.statusSummary,
+                serverStatus.openaiConfigured ? styles.statusSummaryOk : styles.statusSummaryWarning,
+              ]}>
+              <ThemedText style={styles.statusSummaryText}>{serverStatus.message}</ThemedText>
+            </View>
+          )}
+
+          {serverStatus.state === 'error' && (
+            <View style={[styles.statusSummary, styles.statusSummaryWarning]}>
+              <ThemedText style={styles.statusSummaryText}>
+                {`Server status check failed: ${serverStatus.message}`}
+              </ThemedText>
+            </View>
+          )}
         </View>
 
         <View style={styles.actions}>
@@ -396,6 +526,33 @@ const createStyles = (isDarkMode: boolean) =>
     subtitle: {
       opacity: 0.8,
       maxWidth: 720,
+    },
+    statusPanel: {
+      gap: 12,
+    },
+    statusSummary: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+    },
+    statusSummaryOk: {
+      backgroundColor: isDarkMode ? 'rgba(76, 175, 80, 0.12)' : 'rgba(76, 175, 80, 0.18)',
+      borderColor: isDarkMode ? 'rgba(129, 199, 132, 0.5)' : 'rgba(56, 142, 60, 0.35)',
+    },
+    statusSummaryWarning: {
+      backgroundColor: isDarkMode ? 'rgba(239, 83, 80, 0.12)' : 'rgba(255, 205, 210, 0.4)',
+      borderColor: isDarkMode ? 'rgba(244, 143, 177, 0.45)' : 'rgba(239, 83, 80, 0.4)',
+    },
+    statusSummaryNeutral: {
+      backgroundColor: isDarkMode ? 'rgba(120, 144, 156, 0.16)' : 'rgba(207, 216, 220, 0.35)',
+      borderColor: isDarkMode ? 'rgba(176, 190, 197, 0.45)' : 'rgba(144, 164, 174, 0.35)',
+    },
+    statusSummaryText: {
+      flex: 1,
     },
     actions: {
       flexDirection: Platform.OS === 'web' ? 'row' : 'column',
