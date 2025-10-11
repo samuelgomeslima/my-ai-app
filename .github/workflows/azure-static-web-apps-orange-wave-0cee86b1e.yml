@@ -30,6 +30,8 @@ jobs:
           # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
           app_location: "/" # App source code path
           api_location: "api" # Api source code path - optional
+          env: |
+            AzureWebJobsFeatureFlags=EnableWorkerIndexing
           output_location: "dist" # Built app content directory - optional
           package_manager: "npm"
           app_build_command: "npm run build"
@@ -46,4 +48,5 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0CEE86B1E }}
           action: "close"
+
 
