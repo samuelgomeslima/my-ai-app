@@ -96,6 +96,20 @@ export default function HomeScreen() {
     );
   };
 
+  const parseJsonSafely = async (response: Response) => {
+    const text = await response.text();
+
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error('The server returned an invalid response.');
+    }
+  };
+
   const sendBlobForTranscription = async (blob: Blob, fileName: string) => {
     setErrorMessage(null);
     setIsUploading(true);
@@ -127,15 +141,31 @@ export default function HomeScreen() {
         body: formData,
       });
 
-      const result = await response.json();
+      const result = await parseJsonSafely(response);
 
       if (!response.ok) {
-        throw new Error(result?.error ?? 'Unable to transcribe the audio.');
+        const message =
+          result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
+            ? result.error
+            : 'Unable to transcribe the audio.';
+
+        throw new Error(message);
       }
 
       const details: string[] = [];
-      const language = typeof result?.language === 'string' ? result.language.toUpperCase() : null;
-      const duration = formatDuration(typeof result?.duration === 'number' ? result.duration : null);
+      const language =
+        result && typeof result === 'object' && 'language' in result && typeof result.language === 'string'
+          ? result.language.toUpperCase()
+          : null;
+      const duration = formatDuration(
+        result && typeof result === 'object' && 'duration' in result && typeof result.duration === 'number'
+          ? result.duration
+          : null,
+      );
+
+      if (!(result && typeof result === 'object' && 'text' in result && typeof result.text === 'string')) {
+        throw new Error('The server response did not include a transcription result.');
+      }
 
       if (language) {
         details.push(`Language: ${language}`);
@@ -147,7 +177,7 @@ export default function HomeScreen() {
 
       updateMessage(pendingMessageId, (message) => ({
         ...message,
-        text: result?.text?.trim?.() ? result.text.trim() : 'No speech was detected in the clip.',
+        text: result.text.trim() ? result.text.trim() : 'No speech was detected in the clip.',
         status: undefined,
         meta: details.length > 0 ? details.join(' • ') : undefined,
       }));
