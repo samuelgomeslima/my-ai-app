@@ -76,6 +76,10 @@ my-ai-app/
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` – deployment token from the Static Web App resource.
 3. **Configure application settings** for the Azure Functions backend (in the Azure Portal under *Configuration*):
    - `OPENAI_API_KEY` – your production OpenAI key.
+   - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
+     with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
+     deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
+     `transcribe` endpoints.
 4. **Push to `main`**. The included workflow `.github/workflows/azure-static-web-app.yml` will:
    - Install dependencies and export the Expo project to static assets (`dist/`).
    - Install Azure Functions dependencies.
@@ -92,6 +96,14 @@ my-ai-app/
 - **Recording button disabled** – In-browser recording relies on the MediaRecorder API, which is available in most evergreen browsers. If it is unavailable, upload audio files instead.
 - **Transcription errors** – Check the Functions log output. Typical issues include missing `OPENAI_API_KEY`, network restrictions, or unsupported audio codecs.
 - **Deployment failures** – Confirm the GitHub secret `AZURE_STATIC_WEB_APPS_API_TOKEN` is set and the Static Web App resource is configured to use the workflow from this repository.
+- **API responds with 404** – Verify that `AzureWebJobsFeatureFlags=EnableWorkerIndexing` is present in the Static Web App
+  configuration and re-run the deployment workflow. You can confirm the function is available by requesting the health endpoint:
+
+  ```bash
+  curl https://<your-static-web-app>.azurestaticapps.net/api/status
+  ```
+
+  A healthy deployment responds with a JSON payload showing whether the server-side `OPENAI_API_KEY` setting is present.
 
 ## Next steps
 
