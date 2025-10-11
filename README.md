@@ -79,7 +79,27 @@ my-ai-app/
    - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
      with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
      deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
-     `transcribe` endpoints.
+     `transcribe` endpoints. If the Azure portal reports **AppSettings is invalid** with the message `AppSetting with name(s)
+     'AzureWebJobsFeatureFlags' are not allowed`, use the Azure CLI instead:
+
+     ```bash
+     az staticwebapp appsettings set \
+       --name <your-static-web-app-name> \
+       --setting-names AzureWebJobsFeatureFlags=EnableWorkerIndexing
+     ```
+
+     The CLI bypasses the portal validation bug and correctly stores the setting for the managed Functions host.
+     If the command exits with `ModuleNotFoundError: No module named 'msrestazure'`, your Azure CLI installation is missing a dependency that the Static Web Apps extension requires.
+     Run the following to repair the CLI and reinstall the extension, then retry the `az staticwebapp appsettings set` command:
+
+     ```bash
+     az upgrade --yes
+     az extension remove --name staticwebapp
+     az extension add --name staticwebapp
+     ```
+
+     Ignore the removal error if the extension was not previously installed.
+     On Windows you may need to reopen the terminal after `az upgrade` so the refreshed Python environment is picked up.
 4. **Push to `main`**. The included workflow `.github/workflows/azure-static-web-app.yml` will:
    - Install dependencies and export the Expo project to static assets (`dist/`).
    - Install Azure Functions dependencies.
