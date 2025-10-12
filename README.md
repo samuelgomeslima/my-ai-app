@@ -7,6 +7,7 @@ This project delivers a web-based audio chat assistant built with Expo Router. U
 - **Audio uploads** – Select any audio file and receive a transcript in the chat timeline.
 - **In-browser recording** – Use the MediaRecorder API (web browsers) to capture new notes on the fly.
 - **Secure transcription API** – Audio is sent to an Azure Function that calls OpenAI; API keys never leave the backend.
+- **Configurable secrets** – Store your OpenAI key through the in-app Settings tab or rotate it with a direct API call to the Functions backend.
 - **One-click deployment** – A GitHub Actions workflow builds the Expo web app and publishes both the front end and functions to Azure Static Web Apps.
 
 ## Project structure
@@ -69,13 +70,26 @@ my-ai-app/
 
    Open the provided URL in a modern browser. Upload an audio file or record a note to see transcripts appear in the chat.
 
+5. **Optional: configure the OpenAI key without editing files**
+
+   Visit the **Settings** tab in the app to store your OpenAI API key securely on the local Functions host. The screen calls the
+   `/api/openai-settings` endpoint, which you can also invoke manually:
+
+   ```bash
+   curl http://localhost:7071/api/openai-settings \
+     -H "Content-Type: application/json" \
+     -d '{"apiKey":"sk-your-key"}'
+   ```
+
+   A `GET` request reports whether a key is stored, and `DELETE` removes the saved value.
+
 ## Azure deployment
 
 1. **Create a Static Web App** in the Azure Portal and connect it to your GitHub repository.
 2. **Set secrets** in your GitHub repository settings:
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` – deployment token from the Static Web App resource.
 3. **Configure application settings** for the Azure Functions backend (in the Azure Portal under *Configuration*):
-   - `OPENAI_API_KEY` – your production OpenAI key.
+   - `OPENAI_API_KEY` – your production OpenAI key. You can also set or rotate the key after deployment via the `/api/openai-settings` endpoint (see below).
    - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
      with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
      deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
