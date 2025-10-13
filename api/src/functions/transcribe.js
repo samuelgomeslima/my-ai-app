@@ -98,8 +98,14 @@ const prepareOpenAiFile = async (file, fileName, mimeType) => {
   const hasFileClass = typeof File === 'function';
 
   if (hasFileClass && file instanceof File) {
-    const needsNewName = !file.name || file.name.trim().length === 0;
-    const needsNewType = !file.type || file.type.length === 0;
+    const currentName = typeof file.name === 'string' ? file.name : '';
+    const currentType = typeof file.type === 'string' ? file.type : '';
+
+    const needsNewName = currentName.trim().length === 0;
+    const needsNewType =
+      currentType.length === 0 ||
+      currentType === 'application/octet-stream' ||
+      (typeof mimeType === 'string' && mimeType.length > 0 && currentType !== mimeType);
 
     if (!needsNewName && !needsNewType) {
       return file;
