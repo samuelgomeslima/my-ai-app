@@ -1,14 +1,10 @@
 const { app } = require('@azure/functions');
-const fs = require('node:fs/promises');
-const path = require('node:path');
 
-const STORAGE_DIRECTORY = process.env.OPENAI_API_KEY_STORAGE_DIR
-  ? path.resolve(process.env.OPENAI_API_KEY_STORAGE_DIR)
-  : path.join(process.cwd(), 'data');
-
-const STORAGE_FILE = process.env.OPENAI_API_KEY_STORAGE_FILE
-  ? path.resolve(process.env.OPENAI_API_KEY_STORAGE_FILE)
-  : path.join(STORAGE_DIRECTORY, 'openai-api-key.json');
+const {
+  readStoredKeyRecord,
+  writeStoredApiKey,
+  deleteStoredApiKey,
+} = require('../shared/openai');
 
 const DEFAULT_ALLOWED_ORIGIN = process.env.OPENAI_SETTINGS_ALLOWED_ORIGIN || '*';
 
@@ -31,55 +27,6 @@ const maskKey = (value) => {
   const visible = value.slice(-4);
   const hidden = '*'.repeat(value.length - visible.length);
   return `${hidden}${visible}`;
-};
-
-const readStoredKey = async () => {
-  try {
-    const contents = await fs.readFile(STORAGE_FILE, 'utf8');
-    const data = JSON.parse(contents);
-
-    if (!data || typeof data !== 'object') {
-      return null;
-    }
-
-    const apiKey = typeof data.apiKey === 'string' ? data.apiKey : null;
-    const updatedAt = typeof data.updatedAt === 'string' ? data.updatedAt : null;
-
-    if (!apiKey || apiKey.trim().length === 0) {
-      return null;
-    }
-
-    return { apiKey: apiKey.trim(), updatedAt };
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      return null;
-    }
-
-    throw error;
-  }
-};
-
-const writeKey = async (apiKey) => {
-  await fs.mkdir(STORAGE_DIRECTORY, { recursive: true });
-  const record = {
-    apiKey,
-    updatedAt: new Date().toISOString(),
-  };
-  await fs.writeFile(STORAGE_FILE, JSON.stringify(record, null, 2), 'utf8');
-  return record;
-};
-
-const deleteKey = async () => {
-  try {
-    await fs.unlink(STORAGE_FILE);
-    return true;
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      return false;
-    }
-
-    throw error;
-  }
 };
 
 const parseRequestBody = async (request) => {
@@ -135,7 +82,7 @@ app.http('openai-settings', {
 
     try {
       if (request.method === 'GET') {
-        const stored = await readStoredKey();
+        const stored = await readStoredKeyRecord();
 
         if (!stored) {
           return createResponse(200, {
@@ -161,7 +108,7 @@ app.http('openai-settings', {
           });
         }
 
-        const record = await writeKey(apiKey);
+        const record = await writeStoredApiKey(apiKey);
 
         return createResponse(200, {
           success: true,
@@ -172,7 +119,7 @@ app.http('openai-settings', {
       }
 
       if (request.method === 'DELETE') {
-        const removed = await deleteKey();
+        const removed = await deleteStoredApiKey();
 
         return createResponse(200, {
           success: true,
