@@ -39,7 +39,7 @@ const extensionMimeMap = new Map(
     '.mp4': 'audio/mp4',
     '.oga': 'audio/ogg',
     '.ogg': 'audio/ogg',
-    '.opus': 'audio/opus',
+    '.opus': 'audio/ogg',
     '.wav': 'audio/wav',
     '.webm': 'audio/webm',
     '.3gp': 'audio/3gpp',
@@ -59,17 +59,43 @@ const mimeFallbackExtension = {
   'audio/mpeg': '.mp3',
   'audio/mp4': '.m4a',
   'audio/ogg': '.ogg',
-  'audio/opus': '.opus',
   'audio/wav': '.wav',
   'audio/webm': '.webm',
   'audio/x-caf': '.caf',
 };
 
+const ensureExtension = (fileName, extension) => {
+  if (typeof fileName !== 'string' || fileName.length === 0) {
+    return fileName;
+  }
+
+  if (typeof extension !== 'string' || extension.length === 0) {
+    return fileName;
+  }
+
+  const normalizedExtension = extension.startsWith('.') ? extension : `.${extension}`;
+  const lowerCaseName = fileName.toLowerCase();
+  const lowerCaseExtension = normalizedExtension.toLowerCase();
+
+  if (lowerCaseName.endsWith(lowerCaseExtension)) {
+    return fileName;
+  }
+
+  const lastSlashIndex = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+  const lastDotIndex = fileName.lastIndexOf('.');
+
+  if (lastDotIndex > lastSlashIndex) {
+    return `${fileName.slice(0, lastDotIndex)}${normalizedExtension}`;
+  }
+
+  return `${fileName}${normalizedExtension}`;
+};
+
 const determineFileMetadata = (file) => {
-  const providedType =
-    typeof file.type === 'string' && file.type.length > 0 && file.type !== 'application/octet-stream'
-      ? file.type
-      : null;
+  const rawType = typeof file.type === 'string' ? file.type.trim() : '';
+  const normalizedType = rawType.toLowerCase();
+  const invalidTypes = new Set(['application/octet-stream', 'audio/opus']);
+  const providedType = rawType.length > 0 && !invalidTypes.has(normalizedType) ? rawType : null;
   const providedNameRaw =
     typeof file.name === 'string' && file.name.length > 0
       ? file.name
@@ -85,13 +111,14 @@ const determineFileMetadata = (file) => {
 
   const inferredType = providedType ?? matchedMime;
   const mimeType = inferredType ?? 'audio/webm';
+  const normalizedMimeType = mimeType === 'audio/opus' ? 'audio/ogg' : mimeType;
+  const desiredExtension = mimeFallbackExtension[normalizedMimeType] ?? matchedExtension ?? '.webm';
 
-  const fallbackExtension = matchedExtension ?? mimeFallbackExtension[mimeType] ?? '.webm';
+  const baseName =
+    providedName && providedName.trim().length > 0 ? providedName : `audio-upload${desiredExtension}`;
+  const safeName = ensureExtension(baseName, desiredExtension);
 
-  const safeName =
-    providedName && providedName.trim().length > 0 ? providedName : `audio-upload${fallbackExtension}`;
-
-  return { mimeType, fileName: safeName };
+  return { mimeType: normalizedMimeType, fileName: safeName };
 };
 
 const prepareOpenAiFile = async (file, fileName, mimeType) => {
