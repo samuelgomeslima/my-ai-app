@@ -39,11 +39,15 @@ const extensionMimeMap = new Map(
     '.mp4': 'audio/mp4',
     '.oga': 'audio/ogg',
     '.ogg': 'audio/ogg',
-    '.opus': 'audio/ogg',
+    '.opus': 'audio/opus',
     '.wav': 'audio/wav',
     '.webm': 'audio/webm',
     '.3gp': 'audio/3gpp',
   }),
+);
+
+const sortedExtensionMimePairs = Array.from(extensionMimeMap.entries()).sort(
+  (leftPair, rightPair) => rightPair[0].length - leftPair[0].length,
 );
 
 const mimeFallbackExtension = {
@@ -62,15 +66,24 @@ const mimeFallbackExtension = {
 };
 
 const determineFileMetadata = (file) => {
-  const providedType = typeof file.type === 'string' && file.type.length > 0 ? file.type : null;
-  const providedName = typeof file.name === 'string' ? file.name : '';
+  const providedType =
+    typeof file.type === 'string' && file.type.length > 0 && file.type !== 'application/octet-stream'
+      ? file.type
+      : null;
+  const providedNameRaw =
+    typeof file.name === 'string' && file.name.length > 0
+      ? file.name
+      : typeof file.filename === 'string' && file.filename.length > 0
+        ? file.filename
+        : '';
+  const providedName = providedNameRaw;
   const normalizedName = providedName.toLowerCase();
 
-  const matchedExtension = Array.from(extensionMimeMap.keys()).find((ext) =>
-    normalizedName.endsWith(ext),
-  );
+  const matchedEntry = sortedExtensionMimePairs.find(([extension]) => normalizedName.endsWith(extension));
+  const matchedExtension = matchedEntry ? matchedEntry[0] : null;
+  const matchedMime = matchedEntry ? matchedEntry[1] : null;
 
-  const inferredType = providedType ?? (matchedExtension ? extensionMimeMap.get(matchedExtension) : null);
+  const inferredType = providedType ?? matchedMime;
   const mimeType = inferredType ?? 'audio/webm';
 
   const fallbackExtension = matchedExtension ?? mimeFallbackExtension[mimeType] ?? '.webm';
