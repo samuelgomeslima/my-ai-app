@@ -13,8 +13,9 @@ export default function GuideScreen() {
       <View style={styles.section}>
         <ThemedText type="title">How it works</ThemedText>
         <ThemedText style={styles.paragraph}>
-          The Audio Assistant sends recordings to an Azure Function that wraps OpenAI&apos;s transcription API. Your API key is
-          stored securely in the Azure Functions configuration, so it never reaches the browser.
+          The Audio Assistant sends recordings to an Azure Function that wraps OpenAI&apos;s transcription API. Provide your OpenAI
+          key via the <ThemedText type="defaultSemiBold">OPENAI_API_KEY</ThemedText> application setting so the secret stays on
+          the server and never reaches the browser.
         </ThemedText>
       </View>
 

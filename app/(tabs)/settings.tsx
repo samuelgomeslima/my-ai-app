@@ -1,15 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-  useColorScheme,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View, useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -28,7 +18,7 @@ const getSettingsUrl = () => {
 type SettingsState = {
   configured: boolean;
   preview?: string | null;
-  updatedAt?: string | null;
+  message?: string | null;
 };
 
 type RemoteState =
@@ -39,32 +29,24 @@ type RemoteState =
 
 const initialState: RemoteState = { status: 'idle' };
 
-const formatTimestamp = (value: string | null | undefined) => {
-  if (!value) {
+const getStatusMessage = (state: RemoteState) => {
+  if (state.status !== 'success') {
     return null;
   }
 
-  try {
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
-
-    return date.toLocaleString();
-  } catch {
-    return null;
+  if (state.data.message && state.data.message.trim().length > 0) {
+    return state.data.message.trim();
   }
+
+  return state.data.configured
+    ? 'OPENAI_API_KEY environment variable is configured.'
+    : 'OPENAI_API_KEY environment variable is missing or empty.';
 };
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const [apiKey, setApiKey] = useState('');
-  const [remoteState, setRemoteState] = useState<RemoteState>(initialState);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
-
   const styles = useMemo(() => createStyles(colorScheme), [colorScheme]);
+  const [remoteState, setRemoteState] = useState<RemoteState>(initialState);
 
   const fetchSettings = useCallback(async () => {
     setRemoteState({ status: 'loading' });
@@ -93,89 +75,17 @@ export default function SettingsScreen() {
     void fetchSettings();
   }, [fetchSettings]);
 
-  const handleSave = useCallback(async () => {
-    const trimmed = apiKey.trim();
-
-    if (trimmed.length === 0) {
-      Alert.alert('Missing key', 'Enter your OpenAI API key before saving.');
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      const response = await fetch(getSettingsUrl(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ apiKey: trimmed }),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        const fallback = text.trim().length > 0 ? text.trim() : `Request failed with status ${response.status}`;
-        throw new Error(fallback);
-      }
-
-      const data = (await response.json()) as SettingsState;
-      setRemoteState({ status: 'success', data });
-      setApiKey('');
-
-      if (Platform.OS !== 'web') {
-        Alert.alert('Saved', 'Your OpenAI API key has been stored on the server.');
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : 'Unable to store the OpenAI API key. Please try again.';
-      Alert.alert('Save failed', message);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [apiKey]);
-
-  const handleClear = useCallback(async () => {
-    setIsClearing(true);
-
-    try {
-      const response = await fetch(getSettingsUrl(), {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        const fallback = text.trim().length > 0 ? text.trim() : `Request failed with status ${response.status}`;
-        throw new Error(fallback);
-      }
-
-      setRemoteState({ status: 'success', data: { configured: false } });
-
-      if (Platform.OS !== 'web') {
-        Alert.alert('Removed', 'The stored OpenAI API key has been cleared.');
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : 'Unable to delete the stored key. Please try again.';
-      Alert.alert('Delete failed', message);
-    } finally {
-      setIsClearing(false);
-    }
-  }, []);
-
-  const currentPreview = remoteState.status === 'success' ? remoteState.data.preview ?? null : null;
-  const updatedAt = remoteState.status === 'success' ? formatTimestamp(remoteState.data.updatedAt) : null;
+  const statusMessage = getStatusMessage(remoteState);
+  const maskedPreview = remoteState.status === 'success' ? remoteState.data.preview ?? null : null;
 
   return (
     <ThemedView style={styles.wrapper}>
       <ScrollView contentContainerStyle={styles.container}>
         <ThemedText type="title">OpenAI API key</ThemedText>
         <ThemedText style={styles.description}>
-          Save your OpenAI API key to the Azure Functions backend. The key is stored on the server, so the transcription
-          endpoint can call OpenAI on your behalf without exposing secrets to the browser.
+          Configure the <ThemedText type="defaultSemiBold">OPENAI_API_KEY</ThemedText> environment variable in your Azure
+          Functions application settings. This key is never stored by the mobile client—the settings screen simply reports the
+          current status returned by the backend.
         </ThemedText>
 
         <View style={styles.card}>
@@ -186,63 +96,36 @@ export default function SettingsScreen() {
             <View style={styles.statusSection}>
               <ThemedText>
                 {remoteState.data.configured
-                  ? 'An OpenAI API key is stored for the Functions API.'
-                  : 'No OpenAI API key is stored yet.'}
+                  ? 'OPENAI_API_KEY is configured on the Functions app.'
+                  : 'OPENAI_API_KEY is missing from the Functions app settings.'}
               </ThemedText>
-              {currentPreview && (
-                <ThemedText style={styles.preview}>Masked key: {currentPreview}</ThemedText>
+              {maskedPreview && (
+                <ThemedText style={styles.preview}>Masked key: {maskedPreview}</ThemedText>
               )}
-              {updatedAt && <ThemedText style={styles.preview}>Last updated: {updatedAt}</ThemedText>}
+              {statusMessage && <ThemedText style={styles.preview}>{statusMessage}</ThemedText>}
             </View>
           )}
+          <Pressable style={styles.refreshButton} onPress={() => void fetchSettings()}>
+            <ThemedText style={styles.refreshButtonText}>Refresh status</ThemedText>
+          </Pressable>
         </View>
 
         <View style={styles.card}>
-          <ThemedText type="subtitle">Update key</ThemedText>
-          <ThemedText style={styles.description}>Paste a new OpenAI API key and press Save to store it.</ThemedText>
-          <TextInput
-            value={apiKey}
-            onChangeText={setApiKey}
-            placeholder="sk-..."
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            style={styles.input}
-          />
-          <View style={styles.buttonRow}>
-            <Pressable style={[styles.button, styles.primaryButton]} onPress={handleSave} disabled={isSaving}>
-              {isSaving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <ThemedText style={styles.primaryButtonText}>Save key</ThemedText>
-              )}
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.secondaryButton]}
-              onPress={handleClear}
-              disabled={isClearing || remoteState.status !== 'success' || !remoteState.data.configured}>
-              {isClearing ? (
-                <ActivityIndicator color={Colors[colorScheme].tint} />
-              ) : (
-                <ThemedText style={styles.secondaryButtonText}>Clear stored key</ThemedText>
-              )}
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <ThemedText type="subtitle">Configure via API</ThemedText>
-          <ThemedText style={styles.description}>
-            Prefer automation? Send a POST request to the Azure Functions endpoint to rotate the key without using the UI.
+          <ThemedText type="subtitle">How to update the key</ThemedText>
+          <ThemedText style={styles.instructions}>
+            1. Open the Azure Portal and navigate to your Static Web Apps resource.
           </ThemedText>
-          <ThemedText style={styles.codeBlock}>
-            {`curl -X POST ${getSettingsUrl()} \
-  -H "Content-Type: application/json" \
-  -d '{"apiKey":"sk-your-key"}'`}
+          <ThemedText style={styles.instructions}>
+            2. Open the linked Azure Functions app and locate the <ThemedText type="defaultSemiBold">Configuration</ThemedText>{' '}
+            blade.
           </ThemedText>
-          <ThemedText style={styles.description}>
-            A GET request returns the current configuration status, and DELETE removes the stored key. These endpoints power the
-            Settings screen above and can be triggered from CI/CD pipelines or infrastructure scripts.
+          <ThemedText style={styles.instructions}>
+            3. Create or update an application setting named <ThemedText type="defaultSemiBold">OPENAI_API_KEY</ThemedText> with
+            your server-side OpenAI key.
+          </ThemedText>
+          <ThemedText style={styles.instructions}>4. Save the configuration and restart the Functions app if prompted.</ThemedText>
+          <ThemedText style={styles.instructions}>
+            5. Return to this screen and tap <ThemedText type="defaultSemiBold">Refresh status</ThemedText> to confirm the update.
           </ThemedText>
         </View>
       </ScrollView>
@@ -250,93 +133,66 @@ export default function SettingsScreen() {
   );
 }
 
-const createStyles = (scheme: 'light' | 'dark') => {
-  const palette = Colors[scheme];
+type ColorScheme = 'light' | 'dark';
+
+const createStyles = (colorScheme: ColorScheme) => {
+  const isDark = colorScheme === 'dark';
+  const cardBackground = isDark ? '#1f242b' : '#ffffff';
+  const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.08)';
 
   return StyleSheet.create({
     wrapper: {
       flex: 1,
-      backgroundColor: palette.background,
     },
     container: {
-      paddingHorizontal: 20,
-      paddingVertical: 24,
-      gap: 24,
+      flexGrow: 1,
+      padding: 24,
+      gap: 16,
     },
     description: {
+      color: isDark ? '#d6d9dd' : '#3b4351',
       lineHeight: 20,
     },
     card: {
+      backgroundColor: cardBackground,
       borderRadius: 16,
       padding: 20,
-      backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#ffffff',
       gap: 12,
-      shadowColor: '#0f172a33',
-      shadowOpacity: scheme === 'dark' ? 0 : 0.08,
-      shadowOffset: { width: 0, height: 10 },
-      shadowRadius: 30,
-      elevation: 2,
+      borderWidth: 1,
+      borderColor,
+      shadowColor: '#000',
+      shadowOpacity: isDark ? 0.25 : 0.1,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 3,
+    },
+    activity: {
+      color: Colors[colorScheme].tint,
+    },
+    errorText: {
+      color: '#ef4444',
     },
     statusSection: {
       gap: 6,
     },
     preview: {
-      fontFamily: Platform.select({ web: 'monospace', default: undefined }),
+      color: isDark ? '#9ca3af' : '#4b5563',
     },
-    input: {
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: scheme === 'dark' ? 'rgba(255,255,255,0.16)' : '#d4d4d8',
+    refreshButton: {
+      marginTop: 8,
+      alignSelf: 'flex-start',
       paddingHorizontal: 16,
-      paddingVertical: Platform.select({ web: 12, default: 10 }),
-      fontFamily: Platform.select({ web: 'monospace', default: undefined }),
-      backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.08)' : '#f8fafc',
-      color: palette.text,
-    },
-    buttonRow: {
-      flexDirection: 'row',
-      gap: 12,
-      flexWrap: 'wrap',
-    },
-    button: {
-      borderRadius: 999,
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minWidth: 140,
-      gap: 8,
-    },
-    primaryButton: {
-      backgroundColor: palette.tint,
-    },
-    primaryButtonText: {
-      color: '#ffffff',
-      fontWeight: '600',
-    },
-    secondaryButton: {
-      borderWidth: 1,
-      borderColor: scheme === 'dark' ? 'rgba(255,255,255,0.24)' : palette.tint,
-      backgroundColor: 'transparent',
-    },
-    secondaryButtonText: {
-      color: palette.tint,
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-    activity: {
-      color: palette.tint,
-    },
-    errorText: {
-      color: '#dc2626',
-    },
-    codeBlock: {
-      fontFamily: Platform.select({ web: 'monospace', default: undefined }),
-      backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
-      padding: 16,
+      paddingVertical: 10,
       borderRadius: 12,
-      lineHeight: 18,
+      backgroundColor: Colors[colorScheme].tint,
+    },
+    refreshButtonText: {
+      color: isDark ? '#0f172a' : '#ffffff',
+      fontWeight: '600',
+    },
+    instructions: {
+      color: isDark ? '#d6d9dd' : '#3b4351',
+      lineHeight: 20,
     },
   });
 };

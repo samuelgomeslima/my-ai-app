@@ -1,9 +1,6 @@
 const { app } = require('@azure/functions');
 
-const {
-  getEnvironmentApiKey,
-  readStoredKeyRecord,
-} = require('../shared/openai');
+const { getEnvironmentApiKey } = require('../shared/openai');
 
 const DEFAULT_ALLOWED_ORIGIN =
   process.env.OPENAI_STATUS_ALLOWED_ORIGIN ||
@@ -30,7 +27,7 @@ const createResponse = (status, body) => ({
 app.http('status', {
   methods: ['GET', 'OPTIONS'],
   authLevel: 'anonymous',
-  handler: async (request, context) => {
+  handler: async (request) => {
     if (request.method === 'OPTIONS') {
       return {
         status: 204,
@@ -38,35 +35,15 @@ app.http('status', {
       };
     }
 
-    let source = null;
-    let configured = false;
-    let message = 'OpenAI API key is missing or empty on the server.';
-
     const environmentKey = getEnvironmentApiKey();
-
-    if (environmentKey) {
-      configured = true;
-      source = 'environment';
-      message = 'OpenAI API key is configured via environment variable.';
-    } else {
-      try {
-        const stored = await readStoredKeyRecord();
-
-        if (stored) {
-          configured = true;
-          source = 'storage';
-          message = 'OpenAI API key is stored securely on the server.';
-        }
-      } catch (error) {
-        context.error('Failed to determine stored OpenAI API key.', error);
-        message = 'Unable to determine whether an OpenAI API key is stored on the server.';
-      }
-    }
+    const configured = Boolean(environmentKey);
 
     return createResponse(200, {
       openaiConfigured: configured,
-      source,
-      message,
+      source: 'environment',
+      message: configured
+        ? 'OPENAI_API_KEY environment variable is configured.'
+        : 'OPENAI_API_KEY environment variable is missing or empty on the server.',
       timestamp: new Date().toISOString(),
     });
   },

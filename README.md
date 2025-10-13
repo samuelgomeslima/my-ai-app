@@ -70,18 +70,11 @@ my-ai-app/
 
    Open the provided URL in a modern browser. Upload an audio file or record a note to see transcripts appear in the chat.
 
-5. **Optional: configure the OpenAI key without editing files**
+5. **Confirm the OpenAI key is detected**
 
-   Visit the **Settings** tab in the app to store your OpenAI API key securely on the local Functions host. The screen calls the
-   `/api/openai-settings` endpoint, which you can also invoke manually:
-
-   ```bash
-   curl http://localhost:7071/api/openai-settings \
-     -H "Content-Type: application/json" \
-     -d '{"apiKey":"sk-your-key"}'
-   ```
-
-   A `GET` request reports whether a key is stored, and `DELETE` removes the saved value.
+   Ensure the `OPENAI_API_KEY` value is present in `api/local.settings.json` (local development) or the Azure Functions
+   application settings (cloud). Visit the **Settings** tab in the app or send a `GET` request to `/api/openai-settings` to
+   verify that the environment variable is recognised by the backend.
 
 ## Azure deployment
 
@@ -89,7 +82,8 @@ my-ai-app/
 2. **Set secrets** in your GitHub repository settings:
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` – deployment token from the Static Web App resource.
 3. **Configure application settings** for the Azure Functions backend (in the Azure Portal under *Configuration*):
-   - `OPENAI_API_KEY` – your production OpenAI key. You can also set or rotate the key after deployment via the `/api/openai-settings` endpoint (see below).
+   - `OPENAI_API_KEY` – your production OpenAI key. Manage this value directly in the Azure Functions application settings; the
+     API surface is read-only and exists to report status back to the client.
    - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
      with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
      deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
