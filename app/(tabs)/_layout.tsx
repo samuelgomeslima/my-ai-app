@@ -24,6 +24,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="convert"
+        options={{
+          title: 'Convert',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="waveform" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="explore"
         options={{
           title: 'Guide',
