@@ -165,7 +165,7 @@ const normaliseErrorMessage = (value: string) => {
   return trimmed.replace(/^(?:[A-Za-z]*Error):\s*/u, '').trim() || trimmed;
 };
 
-const extractAssistantReply = (payload: Record<string, unknown>) => {
+const extractAssistantReply = (payload: Record<string, unknown>): unknown | null => {
   const choices = Array.isArray(payload.choices) ? payload.choices : [];
 
   if (choices.length === 0) {
@@ -187,28 +187,41 @@ const extractAssistantReply = (payload: Record<string, unknown>) => {
   const content = message.content;
 
   if (typeof content === 'string') {
-    return content.trim();
+    const trimmed = content.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   if (Array.isArray(content)) {
-    const textContent = content
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part;
-        }
+    const textParts: string[] = [];
 
-        if (part && typeof part === 'object' && 'text' in part) {
-          const text = (part as { text?: string }).text;
-          if (typeof text === 'string') {
-            return text;
+    for (const part of content) {
+      if (typeof part === 'string') {
+        textParts.push(part);
+        continue;
+      }
+
+      if (part && typeof part === 'object') {
+        const partRecord = part as Record<string, unknown>;
+
+        if ('json' in partRecord) {
+          const jsonValue = (partRecord as { json?: unknown }).json;
+
+          if (jsonValue !== undefined) {
+            return jsonValue;
           }
         }
 
-        return '';
-      })
-      .join('');
+        if ('text' in partRecord) {
+          const text = (partRecord as { text?: string }).text;
 
-    const trimmed = textContent.trim();
+          if (typeof text === 'string') {
+            textParts.push(text);
+          }
+        }
+      }
+    }
+
+    const trimmed = textParts.join('').trim();
     return trimmed.length > 0 ? trimmed : null;
   }
 
@@ -567,17 +580,20 @@ export default function LanguageCoachScreen() {
           throw new Error('The AI service returned an empty response.');
         }
 
-        const assistantText = extractAssistantReply(json);
+        const assistantPayload = extractAssistantReply(json);
 
-        if (!assistantText) {
+        if (assistantPayload == null) {
           throw new Error('The AI response did not include any content.');
         }
 
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(assistantText);
-        } catch {
-          throw new Error('The AI response was not valid JSON.');
+        let parsed: unknown = assistantPayload;
+
+        if (typeof assistantPayload === 'string') {
+          try {
+            parsed = JSON.parse(assistantPayload);
+          } catch {
+            throw new Error('The AI response was not valid JSON.');
+          }
         }
 
         const result = parseCoachResponse(parsed);
