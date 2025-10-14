@@ -9,6 +9,8 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
+// eslint-disable-next-line import/no-unresolved
+import { Audio } from 'expo-av';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,13 +27,54 @@ const getChatUrl = () => {
   return `${API_BASE_URL}/api/chat`;
 };
 
+const getTranscribeUrl = () => {
+  if (API_BASE_URL.length === 0) {
+    return '/api/transcribe';
+  }
+
+  return `${API_BASE_URL}/api/transcribe`;
+};
+
 type ChatRole = 'user' | 'assistant';
+
+type MessageSource = 'text' | 'audio';
+
+type EvaluationDetail = {
+  score?: number;
+  rating?: string;
+  feedback?: string;
+  issues?: string[];
+  recommendations?: string[];
+  actionableTips?: string[];
+};
+
+type CefrAssessment = {
+  level?: string;
+  justification?: string;
+  focusAreas?: string[];
+  nextSteps?: string[];
+};
+
+type EvaluationResult = {
+  language?: string;
+  summary?: string;
+  pronunciation?: EvaluationDetail;
+  grammar?: EvaluationDetail;
+  fluency?: EvaluationDetail;
+  cefrAssessment?: CefrAssessment;
+};
 
 type ChatMessage = {
   id: string;
   role: ChatRole;
   text: string;
   status?: 'pending' | 'error';
+  source?: MessageSource;
+  metadata?: {
+    language: string;
+    durationSeconds?: number | null;
+  };
+  evaluation?: EvaluationResult;
 };
 
 type ParsedResponse = {
@@ -171,6 +214,32 @@ const createStyles = (isDarkMode: boolean) => {
       fontSize: 15,
       lineHeight: 22,
     },
+    languageSelector: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 8,
+    },
+    languageOption: {
+      borderRadius: 999,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: isDarkMode ? 'rgba(148, 163, 184, 0.4)' : '#cbd5f5',
+      backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.6)' : '#fff',
+    },
+    languageSelected: {
+      backgroundColor: theme.tint,
+      borderColor: theme.tint,
+    },
+    languageText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: isDarkMode ? '#CBD5F5' : '#1e293b',
+    },
+    languageTextActive: {
+      color: isDarkMode ? '#0f172a' : '#fff',
+    },
     conversation: {
       flex: 1,
       borderRadius: 16,
@@ -191,10 +260,10 @@ const createStyles = (isDarkMode: boolean) => {
       alignItems: 'flex-start',
     },
     bubble: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 16,
-      maxWidth: '92%',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 18,
+      maxWidth: '96%',
     },
     userBubble: {
       alignSelf: 'flex-end',
@@ -205,6 +274,7 @@ const createStyles = (isDarkMode: boolean) => {
       backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : '#fff',
       borderWidth: isDarkMode ? 1 : 0,
       borderColor: isDarkMode ? 'rgba(148, 163, 184, 0.18)' : 'transparent',
+      width: '100%',
     },
     userText: {
       color: isDarkMode ? '#0f172a' : '#fff',
@@ -215,6 +285,11 @@ const createStyles = (isDarkMode: boolean) => {
       color: theme.text,
       fontSize: 15,
       lineHeight: 22,
+    },
+    metadataText: {
+      fontSize: 13,
+      color: isDarkMode ? '#cbd5f5' : '#475569',
+      marginBottom: 6,
     },
     pendingRow: {
       flexDirection: 'row',
@@ -255,6 +330,39 @@ const createStyles = (isDarkMode: boolean) => {
     sendDisabled: {
       backgroundColor: isDarkMode ? 'rgba(148, 163, 184, 0.3)' : '#cbd5f5',
     },
+    recordButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: isDarkMode ? 'rgba(148, 163, 184, 0.35)' : '#cbd5f5',
+      backgroundColor: isDarkMode ? 'rgba(15, 23, 42, 0.6)' : '#e2e8f0',
+    },
+    recordButtonActive: {
+      backgroundColor: '#ef4444',
+      borderColor: '#ef4444',
+    },
+    recordButtonDisabled: {
+      opacity: 0.5,
+    },
+    recordingStatusRow: {
+      gap: 6,
+    },
+    recordingIndicator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    recordingLabel: {
+      fontSize: 13,
+      color: isDarkMode ? '#f8fafc' : '#1e293b',
+    },
+    recordingMessage: {
+      fontSize: 13,
+      color: '#f97316',
+    },
     errorBubble: {
       backgroundColor: isDarkMode ? 'rgba(248, 113, 113, 0.18)' : '#fee2e2',
       borderColor: isDarkMode ? 'rgba(248, 113, 113, 0.4)' : '#fecaca',
@@ -263,10 +371,168 @@ const createStyles = (isDarkMode: boolean) => {
     errorText: {
       color: isDarkMode ? '#fca5a5' : '#b91c1c',
     },
+    evaluationSummary: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: theme.text,
+      marginBottom: 12,
+    },
+    metricsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      marginBottom: 12,
+    },
+    metricCard: {
+      flexGrow: 1,
+      minWidth: 220,
+      borderRadius: 14,
+      padding: 14,
+      gap: 6,
+      backgroundColor: isDarkMode ? 'rgba(148, 163, 184, 0.12)' : '#e2e8f0',
+    },
+    metricHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    metricLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: isDarkMode ? '#e2e8f0' : '#0f172a',
+    },
+    metricScore: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: theme.tint,
+    },
+    metricRating: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: isDarkMode ? '#cbd5f5' : '#1f2937',
+    },
+    metricFeedback: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: isDarkMode ? '#e2e8f0' : '#1e293b',
+    },
+    metricListSection: {
+      gap: 4,
+    },
+    metricListTitle: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: isDarkMode ? '#cbd5f5' : '#475569',
+    },
+    metricListItem: {
+      fontSize: 13,
+      lineHeight: 18,
+      color: isDarkMode ? '#f8fafc' : '#334155',
+    },
+    cefrCard: {
+      borderRadius: 14,
+      padding: 16,
+      gap: 8,
+      backgroundColor: isDarkMode ? 'rgba(79, 70, 229, 0.22)' : '#e0e7ff',
+      borderWidth: isDarkMode ? 1 : 0,
+      borderColor: isDarkMode ? 'rgba(99, 102, 241, 0.45)' : 'transparent',
+    },
+    cefrHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    cefrLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: isDarkMode ? '#ede9fe' : '#1e1b4b',
+    },
+    cefrBadge: {
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      backgroundColor: isDarkMode ? '#6366f1' : '#4338ca',
+    },
+    cefrBadgeText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: '#fff',
+    },
+    cefrText: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: isDarkMode ? '#f8fafc' : '#1e293b',
+    },
   });
 };
 
 const placeholderTextColor = (isDarkMode: boolean) => (isDarkMode ? '#94a3b8' : '#64748b');
+
+const evaluationMetricSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    score: { type: 'number', minimum: 0, maximum: 100 },
+    rating: { type: 'string' },
+    feedback: { type: 'string' },
+    issues: { type: 'array', items: { type: 'string' } },
+    recommendations: { type: 'array', items: { type: 'string' } },
+    actionableTips: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['score', 'rating', 'feedback'],
+} as const;
+
+const evaluationResponseFormat = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'language_speaking_evaluation',
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        language: { type: 'string' },
+        summary: { type: 'string' },
+        pronunciation: evaluationMetricSchema,
+        grammar: evaluationMetricSchema,
+        fluency: evaluationMetricSchema,
+        cefrAssessment: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            level: { type: 'string', enum: ['B1', 'B2', 'C1', 'C2', 'A1', 'A2'] },
+            justification: { type: 'string' },
+            focusAreas: { type: 'array', items: { type: 'string' } },
+            nextSteps: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['level', 'justification'],
+        },
+      },
+      required: ['summary', 'pronunciation', 'grammar', 'fluency', 'cefrAssessment'],
+    },
+  },
+} as const;
+
+const languageOptions = [
+  { id: 'English', label: 'English' },
+  { id: 'Italian', label: 'Italian' },
+  { id: 'French', label: 'French' },
+];
+
+const parseEvaluation = (value: string): EvaluationResult | null => {
+  try {
+    const parsed = JSON.parse(value) as EvaluationResult;
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const buildSystemPrompt = (language: string) =>
+  `You are a supportive ${language} language speaking coach. Evaluate each submission using the provided transcript and any metadata. Offer concise, constructive feedback on pronunciation, grammar, and fluency with scores from 0-100 and short ratings. Suggest targeted practice activities. Estimate the speaker's CEFR level (B1, B2, C1, or C2) with justification and next steps. Mention if audio quality limits the pronunciation analysis. Respond using the JSON schema provided.`;
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
@@ -274,14 +540,20 @@ export default function ChatScreen() {
   const styles = useMemo(() => createStyles(isDarkMode), [isDarkMode]);
   const scrollRef = useRef<ScrollView | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState(languageOptions[0]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: createId(),
       role: 'assistant',
-      text: 'Hi there! Ask me about your transcripts, get writing help, or brainstorm new ideas.',
+      text:
+        'Welcome! Choose English, Italian, or French, then record or type a short speaking sample so I can evaluate your pronunciation, grammar, and CEFR level.',
     },
   ]);
   const [isSending, setIsSending] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [microphoneMessage, setMicrophoneMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -300,92 +572,367 @@ export default function ChatScreen() {
     );
   }, []);
 
-  const sendMessage = useCallback(async () => {
-    const trimmed = inputValue.trim();
+  const evaluateSpeech = useCallback(
+    async (
+      transcript: string,
+      metadata: {
+        source: MessageSource;
+        durationSeconds?: number | null;
+      },
+    ) => {
+      const trimmed = transcript.trim();
 
-    if (trimmed.length === 0 || isSending) {
+      if (trimmed.length === 0) {
+        setMicrophoneMessage('I could not detect any speech. Please try again with a clearer sample.');
+        return;
+      }
+
+      const language = selectedLanguage.label;
+
+      const userMessage: ChatMessage = {
+        id: createId(),
+        role: 'user',
+        text: trimmed,
+        source: metadata.source,
+        metadata: {
+          language,
+          durationSeconds: metadata.durationSeconds ?? null,
+        },
+      };
+
+      const assistantMessage: ChatMessage = {
+        id: createId(),
+        role: 'assistant',
+        text: `Evaluating your ${language} speaking sample...`,
+        status: 'pending',
+      };
+
+      setMessages((current) => [...current, userMessage, assistantMessage]);
+      setIsSending(true);
+
+      try {
+        const response = await fetch(getChatUrl(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: 'system',
+                content: buildSystemPrompt(language),
+              },
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  language,
+                  transcript: trimmed,
+                  durationSeconds: metadata.durationSeconds ?? null,
+                  submissionType: metadata.source,
+                }),
+              },
+            ],
+            temperature: 0.3,
+            response_format: evaluationResponseFormat,
+          }),
+        });
+
+        const { json, rawText } = await readResponseContent(response);
+
+        if (!response.ok || !json) {
+          const errorMessage = extractErrorMessage(
+            json,
+            rawText,
+            response.status,
+            response.statusText ?? '',
+          );
+          throw new Error(errorMessage);
+        }
+
+        const reply = extractAssistantReply(json);
+
+        if (!reply) {
+          throw new Error('The evaluation response was empty.');
+        }
+
+        const parsed = parseEvaluation(reply);
+
+        updateAssistantMessage(assistantMessage.id, (previous) => ({
+          ...previous,
+          text: parsed?.summary || reply,
+          status: undefined,
+          evaluation: parsed
+            ? {
+                language: parsed.language ?? language,
+                summary: parsed.summary,
+                pronunciation: parsed.pronunciation,
+                grammar: parsed.grammar,
+                fluency: parsed.fluency,
+                cefrAssessment: parsed.cefrAssessment,
+              }
+            : undefined,
+        }));
+      } catch (error) {
+        const message = normaliseErrorMessage(
+          error instanceof Error ? error.message : 'Unable to evaluate your speaking sample.',
+        );
+        updateAssistantMessage(assistantMessage.id, (previous) => ({
+          ...previous,
+          text: message,
+          status: 'error',
+        }));
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [selectedLanguage, updateAssistantMessage],
+  );
+
+  const transcribeAudio = useCallback(
+    async (uri: string, durationSeconds: number | null) => {
+      setIsTranscribing(true);
+      setMicrophoneMessage(null);
+
+      try {
+        const formData = new FormData();
+
+        if (Platform.OS === 'web') {
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          formData.append('file', blob, 'speech.webm');
+        } else {
+          const nativeAudioFile = {
+            uri,
+            name: 'speech.m4a',
+            type: 'audio/m4a',
+          } as const;
+          formData.append('file', nativeAudioFile as unknown as Blob);
+        }
+
+        const response = await fetch(getTranscribeUrl(), {
+          method: 'POST',
+          body: formData,
+        });
+
+        const { json, rawText } = await readResponseContent(response);
+
+        if (!response.ok || !json) {
+          const errorMessage = extractErrorMessage(
+            json,
+            rawText,
+            response.status,
+            response.statusText ?? '',
+          );
+          throw new Error(errorMessage);
+        }
+
+        const transcript = typeof json.text === 'string' ? json.text.trim() : '';
+
+        if (!transcript) {
+          setMicrophoneMessage('No speech was detected in the recording. Please try again.');
+          return;
+        }
+
+        await evaluateSpeech(transcript, { source: 'audio', durationSeconds });
+      } catch (error) {
+        const message = normaliseErrorMessage(
+          error instanceof Error ? error.message : 'Unable to transcribe the audio sample.',
+        );
+        setMicrophoneMessage(message);
+      } finally {
+        setIsTranscribing(false);
+      }
+    },
+    [evaluateSpeech],
+  );
+
+  const startRecording = useCallback(async () => {
+    if (isRecording || isSending || isTranscribing) {
       return;
     }
 
-    const userMessage: ChatMessage = {
-      id: createId(),
-      role: 'user',
-      text: trimmed,
-    };
+    if (Platform.OS === 'web') {
+      setMicrophoneMessage('Audio recording is not supported in the web preview.');
+      return;
+    }
 
-    const assistantMessage: ChatMessage = {
-      id: createId(),
-      role: 'assistant',
-      text: 'Thinking...',
-      status: 'pending',
-    };
-
-    const previousMessages = messages.filter(
-      (message) => message.status !== 'pending' && message.status !== 'error',
-    );
-    const outgoingMessages = [...previousMessages, userMessage].map((message) => ({
-      role: message.role,
-      content: message.text,
-    }));
-
-    setMessages((current) => [...current, userMessage, assistantMessage]);
-    setInputValue('');
-    setIsSending(true);
+    setMicrophoneMessage(null);
 
     try {
-      const response = await fetch(getChatUrl(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: outgoingMessages,
-          temperature: 0.6,
-        }),
-      });
+      const permission = await Audio.requestPermissionsAsync();
 
-      const { json, rawText } = await readResponseContent(response);
-
-      if (!response.ok || !json) {
-        const errorMessage = extractErrorMessage(json, rawText, response.status, response.statusText ?? '');
-        throw new Error(errorMessage);
+      if (!permission.granted) {
+        setMicrophoneMessage('Please enable microphone access to record audio.');
+        return;
       }
 
-      const reply = extractAssistantReply(json);
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
 
-      if (!reply) {
-        throw new Error('The AI response did not include a message.');
-      }
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRecording.startAsync();
 
-      updateAssistantMessage(assistantMessage.id, (previous) => ({
-        ...previous,
-        text: reply,
-        status: undefined,
-      }));
+      setRecording(newRecording);
+      setIsRecording(true);
     } catch (error) {
-      const message = normaliseErrorMessage(error instanceof Error ? error.message : 'Unable to send your message.');
-      updateAssistantMessage(assistantMessage.id, (previous) => ({
-        ...previous,
-        text: message,
-        status: 'error',
-      }));
-    } finally {
-      setIsSending(false);
+      const message = normaliseErrorMessage(
+        error instanceof Error ? error.message : 'Unable to start recording.',
+      );
+      setMicrophoneMessage(message);
     }
-  }, [inputValue, isSending, messages, updateAssistantMessage]);
+  }, [isRecording, isSending, isTranscribing]);
 
-  const sendDisabled = isSending || inputValue.trim().length === 0;
+  const stopRecording = useCallback(async () => {
+    if (!recording) {
+      return;
+    }
+
+    setIsRecording(false);
+
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch (error) {
+      const message = normaliseErrorMessage(
+        error instanceof Error ? error.message : 'There was a problem stopping the recording.',
+      );
+      setMicrophoneMessage(message);
+      return;
+    }
+
+    let durationSeconds: number | null = null;
+
+    try {
+      const status = await recording.getStatusAsync();
+      if (status && typeof status === 'object' && 'durationMillis' in status) {
+        const millis = Number((status as { durationMillis?: number }).durationMillis);
+        if (Number.isFinite(millis)) {
+          durationSeconds = Math.round(millis / 1000);
+        }
+      }
+    } catch {
+      durationSeconds = null;
+    }
+
+    const uri = recording.getURI();
+    setRecording(null);
+
+    if (!uri) {
+      setMicrophoneMessage('We could not access the recorded file. Please try again.');
+      return;
+    }
+
+    await transcribeAudio(uri, durationSeconds);
+  }, [recording, transcribeAudio]);
+
+  useEffect(() => {
+    return () => {
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+    };
+  }, [recording]);
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      void stopRecording();
+    } else {
+      void startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
+
+  const handleSendText = useCallback(() => {
+    const trimmed = inputValue.trim();
+
+    if (!trimmed || isSending || isRecording || isTranscribing) {
+      return;
+    }
+
+    setInputValue('');
+    void evaluateSpeech(trimmed, { source: 'text', durationSeconds: null });
+  }, [inputValue, isSending, isRecording, isTranscribing, evaluateSpeech]);
+
+  const sendDisabled =
+    isSending || isRecording || isTranscribing || inputValue.trim().length === 0;
+  const recordDisabled = isSending || isTranscribing;
   const theme = Colors[isDarkMode ? 'dark' : 'light'];
   const pendingIndicatorColor = theme.tint;
   const sendIconColor = isDarkMode ? '#0f172a' : '#fff';
+  const recordIconColor = isRecording ? '#fff' : isDarkMode ? '#f8fafc' : '#1f2937';
+
+  const renderMetricCard = useCallback(
+    (label: string, detail?: EvaluationDetail) => {
+      if (!detail) {
+        return null;
+      }
+
+      const practiceItems = detail.recommendations?.length
+        ? detail.recommendations
+        : detail.actionableTips;
+
+      return (
+        <View key={label} style={styles.metricCard}>
+          <View style={styles.metricHeader}>
+            <ThemedText style={styles.metricLabel}>{label}</ThemedText>
+            {typeof detail.score === 'number' ? (
+              <ThemedText style={styles.metricScore}>{`${Math.round(detail.score)}/100`}</ThemedText>
+            ) : null}
+          </View>
+          {detail.rating ? <ThemedText style={styles.metricRating}>{detail.rating}</ThemedText> : null}
+          {detail.feedback ? (
+            <ThemedText style={styles.metricFeedback}>{detail.feedback}</ThemedText>
+          ) : null}
+          {detail.issues && detail.issues.length > 0 ? (
+            <View style={styles.metricListSection}>
+              <ThemedText style={styles.metricListTitle}>Key issues</ThemedText>
+              {detail.issues.map((issue) => (
+                <ThemedText key={issue} style={styles.metricListItem}>
+                  • {issue}
+                </ThemedText>
+              ))}
+            </View>
+          ) : null}
+          {practiceItems && practiceItems.length > 0 ? (
+            <View style={styles.metricListSection}>
+              <ThemedText style={styles.metricListTitle}>Suggested practice</ThemedText>
+              {practiceItems.map((tip) => (
+                <ThemedText key={tip} style={styles.metricListItem}>
+                  • {tip}
+                </ThemedText>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      );
+    },
+    [styles],
+  );
 
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
-        <ThemedText type="title">Chat</ThemedText>
+        <ThemedText type="title">Language Coach</ThemedText>
         <ThemedText style={styles.subtitle}>
-          Talk with the AI assistant to summarise transcripts, draft follow-up questions, or explore new ideas.
+          Practise English, Italian, or French and receive instant feedback on pronunciation, grammar, and CEFR speaking level.
         </ThemedText>
+        <View style={styles.languageSelector}>
+          {languageOptions.map((option) => {
+            const isActive = option.id === selectedLanguage.id;
+
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => setSelectedLanguage(option)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                style={[styles.languageOption, isActive ? styles.languageSelected : undefined]}>
+                <ThemedText
+                  style={[styles.languageText, isActive ? styles.languageTextActive : undefined]}>
+                  {option.label}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.conversation}>
@@ -409,6 +956,15 @@ export default function ChatScreen() {
                     isUser ? styles.userBubble : styles.assistantBubble,
                     isError ? styles.errorBubble : undefined,
                   ]}>
+                  {isUser && message.metadata ? (
+                    <ThemedText style={styles.metadataText}>
+                      {message.source === 'audio' ? '🎙️ Audio sample' : '✍️ Text prompt'} • {message.metadata.language}
+                      {typeof message.metadata.durationSeconds === 'number'
+                        ? ` • ${message.metadata.durationSeconds}s`
+                        : ''}
+                    </ThemedText>
+                  ) : null}
+
                   {isPending ? (
                     <View style={styles.pendingRow}>
                       <ActivityIndicator size="small" color={isUser ? '#fff' : pendingIndicatorColor} />
@@ -416,6 +972,54 @@ export default function ChatScreen() {
                         style={[isUser ? styles.userText : styles.assistantText, isError ? styles.errorText : undefined]}>
                         {message.text}
                       </ThemedText>
+                    </View>
+                  ) : message.evaluation ? (
+                    <View>
+                      <ThemedText style={styles.evaluationSummary}>{message.evaluation.summary}</ThemedText>
+                      <View style={styles.metricsRow}>
+                        {renderMetricCard('Pronunciation', message.evaluation.pronunciation)}
+                        {renderMetricCard('Grammar', message.evaluation.grammar)}
+                        {renderMetricCard('Fluency', message.evaluation.fluency)}
+                      </View>
+                      {message.evaluation.cefrAssessment ? (
+                        <View style={styles.cefrCard}>
+                          <View style={styles.cefrHeader}>
+                            <ThemedText style={styles.cefrLabel}>CEFR level</ThemedText>
+                            <View style={styles.cefrBadge}>
+                              <ThemedText style={styles.cefrBadgeText}>
+                                {message.evaluation.cefrAssessment.level ?? '—'}
+                              </ThemedText>
+                            </View>
+                          </View>
+                          {message.evaluation.cefrAssessment.justification ? (
+                            <ThemedText style={styles.cefrText}>
+                              {message.evaluation.cefrAssessment.justification}
+                            </ThemedText>
+                          ) : null}
+                          {message.evaluation.cefrAssessment.focusAreas &&
+                          message.evaluation.cefrAssessment.focusAreas.length > 0 ? (
+                            <View style={styles.metricListSection}>
+                              <ThemedText style={styles.metricListTitle}>Focus next on</ThemedText>
+                              {message.evaluation.cefrAssessment.focusAreas.map((item) => (
+                                <ThemedText key={item} style={styles.metricListItem}>
+                                  • {item}
+                                </ThemedText>
+                              ))}
+                            </View>
+                          ) : null}
+                          {message.evaluation.cefrAssessment.nextSteps &&
+                          message.evaluation.cefrAssessment.nextSteps.length > 0 ? (
+                            <View style={styles.metricListSection}>
+                              <ThemedText style={styles.metricListTitle}>Next speaking actions</ThemedText>
+                              {message.evaluation.cefrAssessment.nextSteps.map((item) => (
+                                <ThemedText key={item} style={styles.metricListItem}>
+                                  • {item}
+                                </ThemedText>
+                              ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </View>
                   ) : (
                     <ThemedText
@@ -431,19 +1035,36 @@ export default function ChatScreen() {
       </View>
 
       <View style={styles.composer}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+          onPress={toggleRecording}
+          disabled={recordDisabled}
+          style={[
+            styles.recordButton,
+            isRecording ? styles.recordButtonActive : undefined,
+            recordDisabled ? styles.recordButtonDisabled : undefined,
+          ]}>
+          {isRecording ? (
+            <IconSymbol name="stop.fill" color={recordIconColor} size={20} />
+          ) : (
+            <IconSymbol name="mic.fill" color={recordIconColor} size={20} />
+          )}
+        </Pressable>
+
         <TextInput
           style={styles.input}
           value={inputValue}
-          editable={!isSending}
-          placeholder="Ask a question"
+          editable={!isSending && !isRecording && !isTranscribing}
+          placeholder={`Share a ${selectedLanguage.label} speaking sample`}
           placeholderTextColor={placeholderTextColor(isDarkMode)}
           onChangeText={setInputValue}
           multiline
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Send message"
-          onPress={sendMessage}
+          accessibilityLabel="Send for feedback"
+          onPress={handleSendText}
           disabled={sendDisabled}
           style={[styles.sendButton, !sendDisabled ? styles.sendEnabled : styles.sendDisabled]}>
           {isSending ? (
@@ -453,6 +1074,25 @@ export default function ChatScreen() {
           )}
         </Pressable>
       </View>
+
+      {(isRecording || isTranscribing || microphoneMessage) && (
+        <View style={styles.recordingStatusRow}>
+          {isRecording ? (
+            <ThemedText style={styles.recordingLabel}>
+              Recording... tap the button again when you finish speaking.
+            </ThemedText>
+          ) : null}
+          {isTranscribing ? (
+            <View style={styles.recordingIndicator}>
+              <ActivityIndicator size="small" color={pendingIndicatorColor} />
+              <ThemedText style={styles.recordingLabel}>Analysing your pronunciation…</ThemedText>
+            </View>
+          ) : null}
+          {microphoneMessage ? (
+            <ThemedText style={styles.recordingMessage}>{microphoneMessage}</ThemedText>
+          ) : null}
+        </View>
+      )}
     </ThemedView>
   );
 }
