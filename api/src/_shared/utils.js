@@ -2,10 +2,13 @@ const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
 
-function jsonResponse(status, body) {
+function jsonResponse(status, body, extraHeaders = {}) {
   return {
     status,
-    headers: JSON_HEADERS,
+    headers: {
+      ...JSON_HEADERS,
+      ...extraHeaders,
+    },
     body,
   };
 }

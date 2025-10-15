@@ -9,15 +9,40 @@ const {
   readBufferBody,
 } = require("../../_shared/utils");
 
+const ALLOWED_METHODS = ["OPTIONS", "GET", "POST"];
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": ALLOWED_METHODS.join(", "),
+  "Access-Control-Allow-Headers": "Accept, Content-Type, x-api-key, x-functions-key",
+};
+
 module.exports = async function (context, req) {
   const method = (req?.method || "GET").toUpperCase();
   const configuredToken = OPENAI_PROXY_TOKEN;
   const providedToken = getProvidedToken(req);
 
+  if (method === "OPTIONS") {
+    context.res = {
+      status: 204,
+      headers: {
+        ...CORS_HEADERS,
+        "Access-Control-Max-Age": "86400",
+      },
+    };
+    return;
+  }
+
+  const respond = (status, body, headers = {}) => {
+    context.res = jsonResponse(status, body, {
+      ...CORS_HEADERS,
+      ...headers,
+    });
+  };
+
   if (method === "GET") {
     if (!OPENAI_API_KEY) {
       context.log.warn("Missing OPENAI_API_KEY environment variable.");
-      context.res = jsonResponse(503, {
+      respond(503, {
         ok: false,
         error: {
           message: "The OpenAI API key is not configured on the server.",
@@ -28,7 +53,7 @@ module.exports = async function (context, req) {
 
     if (!configuredToken) {
       context.log.error("Missing OPENAI_PROXY_TOKEN configuration.");
-      context.res = jsonResponse(503, {
+      respond(503, {
         ok: false,
         error: {
           message: "Server misconfiguration: missing OpenAI proxy token.",
@@ -38,7 +63,7 @@ module.exports = async function (context, req) {
     }
 
     if (!providedToken || providedToken !== configuredToken) {
-      context.res = jsonResponse(401, {
+      respond(401, {
         ok: false,
         error: {
           message: "Unauthorized request.",
@@ -47,7 +72,7 @@ module.exports = async function (context, req) {
       return;
     }
 
-    context.res = jsonResponse(200, {
+    respond(200, {
       ok: true,
       message: "Transcription proxy is ready.",
     });
@@ -55,17 +80,23 @@ module.exports = async function (context, req) {
   }
 
   if (method !== "POST") {
-    context.res = jsonResponse(405, {
-      error: {
-        message: "Method not allowed.",
+    respond(
+      405,
+      {
+        error: {
+          message: "Method not allowed.",
+        },
       },
-    });
+      {
+        Allow: ALLOWED_METHODS.join(", "),
+      }
+    );
     return;
   }
 
   if (!OPENAI_API_KEY) {
     context.log.warn("Missing OPENAI_API_KEY environment variable.");
-    context.res = jsonResponse(500, {
+    respond(500, {
       error: {
         message: "The OpenAI API key is not configured on the server.",
       },
@@ -75,7 +106,7 @@ module.exports = async function (context, req) {
 
   if (!configuredToken) {
     context.log.error("Missing OPENAI_PROXY_TOKEN configuration.");
-    context.res = jsonResponse(500, {
+    respond(500, {
       error: {
         message: "Server misconfiguration: missing OpenAI proxy token.",
       },
@@ -84,7 +115,7 @@ module.exports = async function (context, req) {
   }
 
   if (!providedToken || providedToken !== configuredToken) {
-    context.res = jsonResponse(401, {
+    respond(401, {
       error: {
         message: "Unauthorized request.",
       },
@@ -94,7 +125,7 @@ module.exports = async function (context, req) {
 
   const contentType = getHeader(req, "content-type");
   if (!contentType || !contentType.toLowerCase().startsWith("multipart/form-data")) {
-    context.res = jsonResponse(400, {
+    respond(400, {
       error: {
         message: "Requests must be sent as multipart/form-data.",
       },
@@ -106,7 +137,7 @@ module.exports = async function (context, req) {
     const rawBody = readBufferBody(req);
 
     if (!rawBody) {
-      context.res = jsonResponse(400, {
+      respond(400, {
         error: {
           message: "Request body is missing or invalid.",
         },
@@ -117,7 +148,7 @@ module.exports = async function (context, req) {
     const boundaryMatch = contentType.match(/boundary="?([^";]+)"?/i);
     if (!boundaryMatch) {
       context.log.warn("Could not determine multipart boundary for request body.");
-      context.res = jsonResponse(400, {
+      respond(400, {
         error: {
           message: "Missing multipart boundary on request.",
         },
@@ -131,7 +162,7 @@ module.exports = async function (context, req) {
 
     if (!rawBodyBinary.includes(closingBoundary)) {
       context.log.warn("Multipart body did not include a closing boundary.");
-      context.res = jsonResponse(400, {
+      respond(400, {
         error: {
           message: "Invalid multipart request body.",
         },
@@ -174,7 +205,7 @@ module.exports = async function (context, req) {
       data = await response.json();
     } catch (error) {
       context.log.error("Transcription API did not return JSON.", error);
-      context.res = jsonResponse(502, {
+      respond(502, {
         error: {
           message: "Unexpected response from the OpenAI transcription service.",
         },
@@ -184,14 +215,14 @@ module.exports = async function (context, req) {
 
     if (!response.ok) {
       context.log.warn("OpenAI transcription failed.", data);
-      context.res = jsonResponse(response.status, data);
+      respond(response.status, data);
       return;
     }
 
-    context.res = jsonResponse(200, data);
+    respond(200, data);
   } catch (error) {
     context.log.error("Unexpected error calling OpenAI transcription.", error);
-    context.res = jsonResponse(500, {
+    respond(500, {
       error: {
         message: "Unable to contact the transcription service right now.",
       },
