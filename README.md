@@ -17,7 +17,9 @@ my-ai-app/
 ├── app/                     # Expo Router screens
 │   └── (tabs)/index.tsx     # Audio chat experience
 ├── api/                     # Azure Functions project
-│   └── transcribe/index.js  # Transcription endpoint
+│   └── src/functions/transcribe
+│       ├── function.json    # Azure Functions binding config
+│       └── index.js         # Transcription proxy
 ├── staticwebapp.config.json # SPA routing config for Azure Static Web Apps
 └── .github/workflows/       # Deployment workflow
 ```
@@ -47,7 +49,14 @@ my-ai-app/
      cp api/local.settings.json.example api/local.settings.json
      ```
 
-   - Edit the new file and replace `replace-with-your-openai-api-key` with your actual key. This file stays on your machine.
+   - Edit the new file and set both `OPENAI_API_KEY` and `OPENAI_PROXY_TOKEN`. The proxy token is an arbitrary secret string that the client must present when calling `/api/transcribe`.
+   - Before starting Expo, export the same proxy token so the web app can authenticate requests:
+
+     ```bash
+     export EXPO_PUBLIC_TRANSCRIBE_API_KEY="<your-proxy-token>"
+     ```
+
+     If you are using an Azure Functions host key instead of a proxy token, set `EXPO_PUBLIC_AZURE_FUNCTIONS_KEY` with that value instead.
    - (Optional) If you are running the Azure Functions host on a different port or domain, expose it to the Expo app by setting `EXPO_PUBLIC_API_BASE_URL` in your shell before starting Expo, e.g.
 
      ```bash
@@ -60,7 +69,7 @@ my-ai-app/
    npm run start --prefix api
    ```
 
-   By default the HTTP endpoint will be available at `http://localhost:7071/api/transcribe`.
+   By default the HTTP endpoint will be available at `http://localhost:7071/api/transcribe`. Include `x-api-key: <proxy-token>` (or `x-functions-key`) when calling the endpoint.
 
 4. **Run the Expo web app**
 
@@ -90,10 +99,12 @@ my-ai-app/
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` – deployment token from the Static Web App resource.
 3. **Configure application settings** for the Azure Functions backend (in the Azure Portal under *Configuration*):
    - `OPENAI_API_KEY` – your production OpenAI key. You can also set or rotate the key after deployment via the `/api/openai-settings` endpoint (see below).
+   - `OPENAI_PROXY_TOKEN` – a secret string that authorizes access to `/api/transcribe`. This must match the client-side `EXPO_PUBLIC_TRANSCRIBE_API_KEY` value used during the Expo build.
+   - `EXPO_PUBLIC_TRANSCRIBE_API_KEY` – the same proxy token so the Expo web build can authenticate browser requests. (Alternatively, set `EXPO_PUBLIC_AZURE_FUNCTIONS_KEY` if you prefer to authorize with an Azure Functions host key.)
    - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
      with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
-     deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
-     `transcribe` endpoints. If the Azure portal reports **AppSettings is invalid** with the message `AppSetting with name(s)
+     deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `chat` and `openai-settings`
+     endpoints. If the Azure portal reports **AppSettings is invalid** with the message `AppSetting with name(s)
      'AzureWebJobsFeatureFlags' are not allowed`, use the Azure CLI instead:
 
      ```bash
@@ -123,6 +134,7 @@ my-ai-app/
 
 - The OpenAI API key is **never** exposed to the client. It lives only in the Azure Functions configuration (locally via `local.settings.json`, in production via Azure app settings).
 - CORS headers are handled inside the Azure Function to allow the Static Web App to communicate with the API securely.
+- The `/api/transcribe` endpoint refuses requests that do not include the `OPENAI_PROXY_TOKEN`, so only trusted clients can stream audio through the proxy.
 - The repository does **not** commit any secrets. Ensure `api/local.settings.json` is kept out of version control.
 
 ## Troubleshooting
@@ -132,13 +144,14 @@ my-ai-app/
 - **Transcription errors** – Check the Functions log output. Typical issues include missing `OPENAI_API_KEY`, network restrictions, or unsupported audio codecs.
 - **Deployment failures** – Confirm the GitHub secret `AZURE_STATIC_WEB_APPS_API_TOKEN` is set and the Static Web App resource is configured to use the workflow from this repository.
 - **API responds with 404** – Verify that `AzureWebJobsFeatureFlags=EnableWorkerIndexing` is present in the Static Web App
-  configuration and re-run the deployment workflow. You can confirm the function is available by requesting the health endpoint:
+  configuration and re-run the deployment workflow. You can confirm the function is available by requesting the transcription endpoint:
 
   ```bash
-  curl https://<your-static-web-app>.azurestaticapps.net/api/status
+  curl https://<your-static-web-app>.azurestaticapps.net/api/transcribe \
+    -H "x-api-key: <your-proxy-token>"
   ```
 
-  A healthy deployment responds with a JSON payload showing whether the server-side `OPENAI_API_KEY` setting is present.
+  A healthy deployment responds with `{ "ok": true, "message": "Transcription proxy is ready." }`.
 
 ## Next steps
 

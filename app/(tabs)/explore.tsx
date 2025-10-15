@@ -26,13 +26,18 @@ export default function GuideScreen() {
           <ThemedText type="defaultSemiBold">api/local.settings.json</ThemedText> and add your OpenAI key.
         </ThemedText>
         <ThemedText style={styles.paragraph}>
-          3. Run the Azure Functions host with <ThemedText type="defaultSemiBold">npm run start --prefix api</ThemedText>.
+          3. Export <ThemedText type="defaultSemiBold">EXPO_PUBLIC_TRANSCRIBE_API_KEY</ThemedText> with the same proxy token
+          defined in <ThemedText type="defaultSemiBold">api/local.settings.json</ThemedText> (or set
+          <ThemedText type="defaultSemiBold">EXPO_PUBLIC_AZURE_FUNCTIONS_KEY</ThemedText>).
         </ThemedText>
         <ThemedText style={styles.paragraph}>
-          4. Launch the Expo development server with <ThemedText type="defaultSemiBold">npx expo start --web</ThemedText>.
+          4. Run the Azure Functions host with <ThemedText type="defaultSemiBold">npm run start --prefix api</ThemedText>.
         </ThemedText>
         <ThemedText style={styles.paragraph}>
-          5. Open the app in your browser, upload audio, and read the transcription response.
+          5. Launch the Expo development server with <ThemedText type="defaultSemiBold">npx expo start --web</ThemedText>.
+        </ThemedText>
+        <ThemedText style={styles.paragraph}>
+          6. Open the app in your browser, upload audio, and read the transcription response.
         </ThemedText>
       </View>
 
@@ -47,6 +52,10 @@ export default function GuideScreen() {
         </ThemedText>
         <ThemedText style={styles.paragraph}>
           • In the Azure Portal, set the Functions app setting <ThemedText type="defaultSemiBold">OPENAI_API_KEY</ThemedText>.
+        </ThemedText>
+        <ThemedText style={styles.paragraph}>
+          • Add <ThemedText type="defaultSemiBold">OPENAI_PROXY_TOKEN</ThemedText> and expose the same value to the front end via
+          <ThemedText type="defaultSemiBold">EXPO_PUBLIC_TRANSCRIBE_API_KEY</ThemedText> (or <ThemedText type="defaultSemiBold">EXPO_PUBLIC_AZURE_FUNCTIONS_KEY</ThemedText>).
         </ThemedText>
         <ThemedText style={styles.paragraph}>
           • Push to the <ThemedText type="defaultSemiBold">main</ThemedText> branch to trigger the GitHub Actions workflow.

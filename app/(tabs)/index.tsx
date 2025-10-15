@@ -14,6 +14,24 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
+const TRANSCRIBE_PROXY_TOKEN = (process.env.EXPO_PUBLIC_TRANSCRIBE_API_KEY ?? '').trim();
+const FUNCTIONS_HOST_KEY = (process.env.EXPO_PUBLIC_AZURE_FUNCTIONS_KEY ?? '').trim();
+
+const hasProxyToken = TRANSCRIBE_PROXY_TOKEN.length > 0;
+const hasFunctionsKey = FUNCTIONS_HOST_KEY.length > 0;
+const hasAnyAuthToken = hasProxyToken || hasFunctionsKey;
+
+const buildAuthHeaders = () => {
+  if (hasProxyToken) {
+    return { 'x-api-key': TRANSCRIBE_PROXY_TOKEN } as Record<string, string>;
+  }
+
+  if (hasFunctionsKey) {
+    return { 'x-functions-key': FUNCTIONS_HOST_KEY } as Record<string, string>;
+  }
+
+  return {} as Record<string, string>;
+};
 
 const createId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -60,7 +78,7 @@ const extractErrorMessage = (
 
     if (looksLikeHtml) {
       if (status === 404) {
-        return 'The status endpoint returned a 404 HTML page. Verify that the Azure Functions API is deployed and the /api/status route is reachable.';
+        return 'The transcription endpoint returned a 404 HTML page. Verify that the Azure Functions API is deployed and the /api/transcribe route is reachable.';
       }
 
       return 'The server responded with an HTML error page instead of JSON. Ensure the Azure Functions backend is running and accessible.';
@@ -101,17 +119,9 @@ const getTranscribeUrl = () => {
   return `${API_BASE_URL}/api/transcribe`;
 };
 
-const getStatusUrl = () => {
-  if (API_BASE_URL.length === 0) {
-    return '/api/status';
-  }
-
-  return `${API_BASE_URL}/api/status`;
-};
-
 type ServerStatusState =
   | { state: 'checking' }
-  | { state: 'ok'; openaiConfigured: boolean; message: string }
+  | { state: 'ok'; message: string }
   | { state: 'error'; message: string };
 
 export default function HomeScreen() {
@@ -140,8 +150,22 @@ export default function HomeScreen() {
     let cancelled = false;
 
     const checkServerStatus = async () => {
+      if (!hasAnyAuthToken) {
+        if (!cancelled) {
+          setServerStatus({
+            state: 'error',
+            message:
+              'Missing API proxy token. Set EXPO_PUBLIC_TRANSCRIBE_API_KEY or EXPO_PUBLIC_AZURE_FUNCTIONS_KEY before starting the app.',
+          });
+        }
+        return;
+      }
+
       try {
-        const response = await fetch(getStatusUrl());
+        const response = await fetch(getTranscribeUrl(), {
+          method: 'GET',
+          headers: { ...buildAuthHeaders(), Accept: 'application/json' },
+        });
         const { json, rawText } = await readResponseContent(response);
 
         if (!response.ok) {
@@ -150,26 +174,27 @@ export default function HomeScreen() {
         }
 
         if (!json || typeof json !== 'object') {
-          throw new Error('The status endpoint returned an empty response.');
+          throw new Error('The transcription endpoint returned an empty response.');
         }
 
-        const data = json as Record<string, unknown>;
-        const openaiConfigured =
-          'openaiConfigured' in data && typeof data.openaiConfigured === 'boolean' ? data.openaiConfigured : false;
-
+        const ok = 'ok' in json ? Boolean(json.ok) : false;
         const message =
-          'message' in data && typeof data.message === 'string'
-            ? data.message
-            : openaiConfigured
-              ? 'OpenAI API key is configured on the server.'
-              : 'OpenAI API key is missing or empty on the server.';
+          'message' in json && typeof json.message === 'string'
+            ? json.message
+            : ok
+              ? 'Transcription proxy is ready.'
+              : 'Transcription proxy responded without an ok flag.';
+
+        if (!ok) {
+          throw new Error(message);
+        }
 
         if (!cancelled) {
-          setServerStatus({ state: 'ok', openaiConfigured, message });
+          setServerStatus({ state: 'ok', message });
         }
       } catch (error) {
         const message = normaliseErrorMessage(
-          error instanceof Error ? error.message : 'Unable to contact the status endpoint.',
+          error instanceof Error ? error.message : 'Unable to contact the transcription endpoint.',
         );
 
         if (!cancelled) {
@@ -247,12 +272,19 @@ export default function HomeScreen() {
     appendMessage(pendingMessage);
 
     try {
+      if (!hasAnyAuthToken) {
+        throw new Error(
+          'Missing API proxy token. Set EXPO_PUBLIC_TRANSCRIBE_API_KEY or EXPO_PUBLIC_AZURE_FUNCTIONS_KEY before uploading audio.',
+        );
+      }
+
       const formData = new FormData();
       const file = blob instanceof File ? blob : new File([blob], fileName, { type: blob.type || 'audio/webm' });
       formData.append('file', file);
 
       const response = await fetch(getTranscribeUrl(), {
         method: 'POST',
+        headers: buildAuthHeaders(),
         body: formData,
       });
 
@@ -406,11 +438,7 @@ export default function HomeScreen() {
           )}
 
           {serverStatus.state === 'ok' && (
-            <View
-              style={[
-                styles.statusSummary,
-                serverStatus.openaiConfigured ? styles.statusSummaryOk : styles.statusSummaryWarning,
-              ]}>
+            <View style={[styles.statusSummary, styles.statusSummaryOk]}>
               <ThemedText style={styles.statusSummaryText}>{serverStatus.message}</ThemedText>
             </View>
           )}
