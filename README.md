@@ -7,6 +7,7 @@ This project delivers a web-based audio chat assistant built with Expo Router. U
 - **Audio uploads** – Select any audio file and receive a transcript in the chat timeline.
 - **In-browser recording** – Use the MediaRecorder API (web browsers) to capture new notes on the fly.
 - **Secure transcription API** – Audio is sent to an Azure Function that calls OpenAI; API keys never leave the backend.
+- **Token-protected proxy** – A separate assistant endpoint forwards multipart uploads to OpenAI when a shared secret token is supplied.
 - **Configurable secrets** – Store your OpenAI key through the in-app Settings tab or rotate it with a direct API call to the Functions backend.
 - **One-click deployment** – A GitHub Actions workflow builds the Expo web app and publishes both the front end and functions to Azure Static Web Apps.
 
@@ -17,7 +18,8 @@ my-ai-app/
 ├── app/                     # Expo Router screens
 │   └── (tabs)/index.tsx     # Audio chat experience
 ├── api/                     # Azure Functions project
-│   └── transcribe/index.js  # Transcription endpoint
+│   ├── transcribe.js          # Transcription endpoint
+│   └── transcription-proxy.js # Token-protected transcription proxy
 ├── staticwebapp.config.json # SPA routing config for Azure Static Web Apps
 └── .github/workflows/       # Deployment workflow
 ```
@@ -61,6 +63,7 @@ my-ai-app/
    ```
 
    By default the HTTP endpoint will be available at `http://localhost:7071/api/transcribe`.
+   A token-protected proxy is also exposed at `http://localhost:7071/api/transcription-proxy`.
 
 4. **Run the Expo web app**
 
@@ -90,6 +93,7 @@ my-ai-app/
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` – deployment token from the Static Web App resource.
 3. **Configure application settings** for the Azure Functions backend (in the Azure Portal under *Configuration*):
    - `OPENAI_API_KEY` – your production OpenAI key. You can also set or rotate the key after deployment via the `/api/openai-settings` endpoint (see below).
+   - `OPENAI_TRANSCRIPTION_PROXY_TOKEN` – a shared secret required by `/api/transcription-proxy`. Clients must provide the same value via an `Authorization: Bearer <token>` header (or `x-openai-proxy-token`) when calling the endpoint.
    - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
      with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
      deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `status` and
