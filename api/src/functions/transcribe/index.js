@@ -1,5 +1,4 @@
 const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_PROXY_TOKEN = process.env.OPENAI_PROXY_TOKEN;
 
 const {
@@ -8,6 +7,8 @@ const {
   getHeader,
   readBufferBody,
 } = require("../../_shared/utils");
+
+const { resolveApiKey } = require("../../shared/openai");
 
 const ALLOWED_METHODS = ["OPTIONS", "GET", "POST"];
 const CORS_HEADERS = {
@@ -20,6 +21,11 @@ module.exports = async function (context, req) {
   const method = (req?.method || "GET").toUpperCase();
   const configuredToken = OPENAI_PROXY_TOKEN;
   const providedToken = getProvidedToken(req);
+
+  const logger =
+    context?.log && typeof context.log.error === "function"
+      ? { error: context.log.error.bind(context.log) }
+      : context;
 
   if (method === "OPTIONS") {
     context.res = {
@@ -40,17 +46,6 @@ module.exports = async function (context, req) {
   };
 
   if (method === "GET") {
-    if (!OPENAI_API_KEY) {
-      context.log.warn("Missing OPENAI_API_KEY environment variable.");
-      respond(503, {
-        ok: false,
-        error: {
-          message: "The OpenAI API key is not configured on the server.",
-        },
-      });
-      return;
-    }
-
     if (!configuredToken) {
       context.log.error("Missing OPENAI_PROXY_TOKEN configuration.");
       respond(503, {
@@ -67,6 +62,19 @@ module.exports = async function (context, req) {
         ok: false,
         error: {
           message: "Unauthorized request.",
+        },
+      });
+      return;
+    }
+
+    const apiKey = await resolveApiKey(logger);
+
+    if (!apiKey) {
+      context.log.warn("Missing OpenAI API key for transcription proxy readiness check.");
+      respond(503, {
+        ok: false,
+        error: {
+          message: "The OpenAI API key is not configured on the server.",
         },
       });
       return;
@@ -94,16 +102,6 @@ module.exports = async function (context, req) {
     return;
   }
 
-  if (!OPENAI_API_KEY) {
-    context.log.warn("Missing OPENAI_API_KEY environment variable.");
-    respond(500, {
-      error: {
-        message: "The OpenAI API key is not configured on the server.",
-      },
-    });
-    return;
-  }
-
   if (!configuredToken) {
     context.log.error("Missing OPENAI_PROXY_TOKEN configuration.");
     respond(500, {
@@ -118,6 +116,18 @@ module.exports = async function (context, req) {
     respond(401, {
       error: {
         message: "Unauthorized request.",
+      },
+    });
+    return;
+  }
+
+  const apiKey = await resolveApiKey(logger);
+
+  if (!apiKey) {
+    context.log.warn("Missing OpenAI API key for transcription proxy request.");
+    respond(500, {
+      error: {
+        message: "The OpenAI API key is not configured on the server.",
       },
     });
     return;
@@ -194,7 +204,7 @@ module.exports = async function (context, req) {
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": contentType,
       },
       body: bodyToSend,
