@@ -2,7 +2,12 @@ const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_PROXY_TOKEN = process.env.OPENAI_PROXY_TOKEN;
 
-const { jsonResponse, getProvidedToken, getHeader, readBufferBody } = require("../_shared/utils");
+const {
+  jsonResponse,
+  getProvidedToken,
+  getHeader,
+  readBufferBody,
+} = require("../../_shared/utils");
 
 module.exports = async function (context, req) {
   const method = (req?.method || "GET").toUpperCase();
@@ -109,13 +114,59 @@ module.exports = async function (context, req) {
       return;
     }
 
+    const boundaryMatch = contentType.match(/boundary="?([^";]+)"?/i);
+    if (!boundaryMatch) {
+      context.log.warn("Could not determine multipart boundary for request body.");
+      context.res = jsonResponse(400, {
+        error: {
+          message: "Missing multipart boundary on request.",
+        },
+      });
+      return;
+    }
+
+    const boundary = boundaryMatch[1];
+    const closingBoundary = `--${boundary}--`;
+    const rawBodyBinary = rawBody.toString("binary");
+
+    if (!rawBodyBinary.includes(closingBoundary)) {
+      context.log.warn("Multipart body did not include a closing boundary.");
+      context.res = jsonResponse(400, {
+        error: {
+          message: "Invalid multipart request body.",
+        },
+      });
+      return;
+    }
+
+    const hasModelField = rawBodyBinary.includes('name="model"');
+    const hasResponseFormatField = rawBodyBinary.includes('name="response_format"');
+
+    let bodyToSend = rawBody;
+    if (!hasModelField || !hasResponseFormatField) {
+      const insertionIndex = rawBodyBinary.lastIndexOf(closingBoundary);
+      const prefix = rawBodyBinary.slice(0, insertionIndex);
+      const suffix = rawBodyBinary.slice(insertionIndex);
+
+      let additions = "";
+      if (!hasModelField) {
+        additions += `\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`;
+      }
+      if (!hasResponseFormatField) {
+        additions += `\r\n--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\njson\r\n`;
+      }
+
+      const updatedBinary = `${prefix}${additions}\r\n${suffix}`;
+      bodyToSend = Buffer.from(updatedBinary, "binary");
+    }
+
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": contentType,
       },
-      body: rawBody,
+      body: bodyToSend,
     });
 
     let data;
