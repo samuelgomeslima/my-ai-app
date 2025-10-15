@@ -108,7 +108,7 @@ const buildOpenAiFormData = async (file) => {
   const formData = new FormData();
 
   formData.append('model', 'gpt-4o-mini-transcribe');
-  formData.append('response_format', 'verbose_json');
+  formData.append('response_format', 'json');
 
   if (typeof File === 'function' && prepared instanceof File) {
     formData.append('file', prepared);
