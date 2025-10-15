@@ -10,6 +10,12 @@ const DEFAULT_ALLOWED_ORIGIN =
   process.env.OPENAI_SETTINGS_ALLOWED_ORIGIN ||
   '*';
 
+const DEFAULT_RESPONSE_FORMAT =
+  typeof process.env.OPENAI_TRANSCRIBE_RESPONSE_FORMAT === 'string' &&
+  process.env.OPENAI_TRANSCRIBE_RESPONSE_FORMAT.trim().length > 0
+    ? process.env.OPENAI_TRANSCRIBE_RESPONSE_FORMAT.trim()
+    : 'json';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': DEFAULT_ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST,OPTIONS',
@@ -108,7 +114,7 @@ const buildOpenAiFormData = async (file) => {
   const formData = new FormData();
 
   formData.append('model', 'gpt-4o-mini-transcribe');
-  formData.append('response_format', 'verbose_json');
+  formData.append('response_format', DEFAULT_RESPONSE_FORMAT);
 
   if (typeof File === 'function' && prepared instanceof File) {
     formData.append('file', prepared);
