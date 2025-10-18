@@ -101,11 +101,11 @@ my-ai-app/
    - `OPENAI_API_KEY` – your production OpenAI key. You can also set or rotate the key after deployment via the `/api/openai-settings` endpoint (see below).
    - `OPENAI_PROXY_TOKEN` – a secret string that authorizes access to `/api/transcribe`. This must match the client-side `EXPO_PUBLIC_TRANSCRIBE_API_KEY` value used during the Expo build.
    - `EXPO_PUBLIC_TRANSCRIBE_API_KEY` – the same proxy token so the Expo web build can authenticate browser requests. (Alternatively, set `EXPO_PUBLIC_AZURE_FUNCTIONS_KEY` if you prefer to authorize with an Azure Functions host key.)
-   - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
-     with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
-     deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `chat` and `openai-settings`
-     endpoints. If the Azure portal reports **AppSettings is invalid** with the message `AppSetting with name(s)
-     'AzureWebJobsFeatureFlags' are not allowed`, use the Azure CLI instead:
+  - `AzureWebJobsFeatureFlags` – set the value to `EnableWorkerIndexing`. Static Web Apps currently hosts the Functions runtime
+    with worker indexing disabled by default. Without this flag, the new JavaScript programming model that this repo uses will
+    deploy successfully but all requests return **404 Not Found** because the runtime never discovers the `chat` and `openai-settings`
+    endpoints. If the Azure portal reports **AppSettings is invalid** with the message `AppSetting with name(s)
+    'AzureWebJobsFeatureFlags' are not allowed`, use the Azure CLI instead:
 
      ```bash
      az staticwebapp appsettings set \
@@ -152,6 +152,12 @@ my-ai-app/
   ```
 
   A healthy deployment responds with `{ "ok": true, "message": "Transcription proxy is ready." }`.
+
+## Helpful links
+
+- [Azure Static Web Apps documentation](https://learn.microsoft.com/azure/static-web-apps/)
+- [Azure Functions documentation](https://learn.microsoft.com/azure/azure-functions/)
+- [OpenAI speech-to-text guide](https://platform.openai.com/docs/guides/speech-to-text)
 
 ## Next steps
 
